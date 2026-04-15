@@ -193,6 +193,7 @@ tick_interval_minutes = 20
 - **game.html — live world map:** `LOCATION_LAYOUT` removed. `LOCATION_STYLE` retains visual-only fields (`w`, `h`, `color`) per named location. `locationNodes` (keyed by name) is populated at scene load by fetching `/api/world_map`. `create()` is async and awaits `loadWorldMap()` before `drawMap()`. `spawnCharacter()` and `moveCharacter()` warn and skip on unknown locations — no silent Central Square fallback. Heatmap renderer uses `locationNodes` for coordinates and `LOCATION_STYLE` for size. Emergent locations render with a distinct tint.
 - **game.html — location_discovered websocket:** `handleWS` handles `location_discovered` events — adds the incoming location to `locationNodes`, calls `scene.renderLocationNode()`, logs to console with name/coordinates/territory_type, and adds a live feed entry. `renderLocationNode()` draws emergent locations with a deep teal fill, bright green border, diamond marker, and green label text — visually distinct from seed zones. Fades in over 800ms. New node is immediately available for `moveCharacter()` calls.
 - **world_expansion.py — assign_map_coordinates:** `assign_map_coordinates(db, territory_type) -> (float, float)` queries all Location rows with coordinates, enforces 80px minimum distance (pixel space: W=900, H=650), zones: `inside` [0.15–0.85 × 0.15–0.85], `frontier` (ring 0.05–0.95 excluding inside), `outside` (ring 0.02–0.98 excluding frontier). 50 random attempts via rejection-sampling `_sample_in_zone()`, falls back to expanding spiral from zone centre (49 rings). `create_emergent_location` updated to call this instead of the old hardcoded position list; sets all 15 emergent fields on the Location row directly. Verified: 20 simulated locations, 0 collisions, all in correct zones.
+- **world_expansion.py — location_discovered broadcast:** `_loc_to_world_map_payload(loc, discoverer_roster_id, sim_day)` builds the full `/api/world_map`-shaped dict from a newly committed Location row. `scan_for_discoveries` now returns this payload per discovery. `engine.py` already iterates discoveries and calls `await broadcast_fn({"type": "location_discovered", "data": disc})` — payload now carries all 15 world_map fields. `websocket_manager.py` confirmed: `async broadcast` and module-level `manager` singleton already present, no changes needed.
 - **daily_composer.py**, **consequence_engine.py**, **silent_actions.py**, **transient_state.py**, **social_roles.py**, **location_memory.py**, **daybook.py**, **scene_categorizer.py**, **scene_selector.py**, **pressure_selector.py** — all implemented.
 
 ---
@@ -203,17 +204,7 @@ Execute these one at a time in order. Do not begin the next priority until the c
 
 ---
 
-### PRIORITY 1 — Broadcast location_discovered from world_expansion.py
-
-**Files to change:** `simulation/world_expansion.py`, `api/websocket_manager.py`
-
-After committing a new confirmed `Location` row (with coordinates assigned), broadcast a websocket event with type `location_discovered` and a payload containing all `/api/world_map` fields for that location. Confirm `websocket_manager.py` has a broadcast method usable from async simulation code — add one if it does not.
-
-**Done when:** Running a tick that produces a confirmed discovery causes a `location_discovered` websocket message to appear in the browser console.
-
----
-
-### PRIORITY 2 — Expand discovery detection to multiple signal sources
+### PRIORITY 1 — Expand discovery detection to multiple signal sources
 
 **Files to change:** `simulation/world_expansion.py`
 
@@ -236,7 +227,7 @@ Phrases like "beyond my reach" or "lost in thought" must not trigger discovery �
 
 ---
 
-### PRIORITY 3 — Tie discovery to discoverer character state
+### PRIORITY 2 — Tie discovery to discoverer character state
 
 **Files to change:** `simulation/world_expansion.py`, `simulation/memory_writer.py`, `simulation/social_roles.py`, `database/models.py`
 
@@ -252,7 +243,7 @@ Log each discovery event with character name, location name, and sim_day.
 
 ---
 
-### PRIORITY 4 — Increment use_count on Location when used in a scene
+### PRIORITY 3 — Increment use_count on Location when used in a scene
 
 **Files to change:** `simulation/conversation_runner.py` or `simulation/engine.py`
 
@@ -262,7 +253,7 @@ After each scene completes, look up the scene's location by name in the `Locatio
 
 ---
 
-### PRIORITY 5 — Expose discovery history and evolution indicators on the dashboard
+### PRIORITY 4 — Expose discovery history and evolution indicators on the dashboard
 
 **Files to change:** `static/dashboard.html`, `api/routes.py`
 

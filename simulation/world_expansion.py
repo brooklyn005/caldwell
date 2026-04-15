@@ -277,6 +277,27 @@ def create_emergent_location(
     return new_loc
 
 
+def _loc_to_world_map_payload(loc: Location, discoverer_roster_id: str, sim_day: int) -> dict:
+    """Build the /api/world_map-shaped dict for a newly created Location."""
+    return {
+        "id": loc.id,
+        "name": loc.name,
+        "is_seed": loc.is_seed,
+        "is_emergent": loc.is_emergent,
+        "territory_type": loc.territory_type,
+        "discovery_stage": loc.discovery_stage,
+        "location_category": loc.location_category,
+        "map_x": loc.map_x,
+        "map_y": loc.map_y,
+        "danger_level": loc.danger_level,
+        "claim_character_id": loc.claim_character_id,
+        "use_count": loc.use_count,
+        "discovered_by_id": loc.discovered_by_id or discoverer_roster_id,
+        "discovered_on_day": loc.discovered_on_day or sim_day,
+        "confidence": loc.confidence,
+    }
+
+
 def scan_for_discoveries(sim_day: int, db: Session) -> list[dict]:
     """
     Scan today's action memories and dialogues for discovery language.
@@ -332,12 +353,7 @@ def scan_for_discoveries(sim_day: int, db: Session) -> list[dict]:
             char, mem.content, is_outside, sim_day, db
         )
         if new_loc:
-            discoveries.append({
-                "character": char.roster_id,
-                "location": new_loc.name,
-                "is_outside": is_outside,
-                "sim_day": sim_day,
-            })
+            discoveries.append(_loc_to_world_map_payload(new_loc, char.roster_id, sim_day))
 
     return discoveries
 
