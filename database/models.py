@@ -79,6 +79,26 @@ class Location(Base):
     desirable_unit_count = Column(Integer, default=0)
     resource_tier = Column(Integer, default=1)  # 1=basic provision, 2=discovered, 3=social
 
+    # ── Emergent world fields ─────────────────────────────────────────────
+    is_seed = Column(Boolean, default=True)
+    is_emergent = Column(Boolean, default=False)
+    discovery_origin = Column(Text, nullable=True)
+    discovered_by_id = Column(Text, nullable=True)   # roster_id of discovering character
+    discovered_on_day = Column(Integer, nullable=True)
+    named_by_id = Column(Text, nullable=True)
+    confidence = Column(Float, default=1.0)           # 0.0–1.0
+    discovery_stage = Column(String(32), default="confirmed")
+    # hint / tentative / confirmed / named / claimed / specialized
+    location_category = Column(Text, nullable=True)
+    # shelter / trail / clearing / water_source / work_area /
+    # ritual_area / ruins / garden / hunting_ground / gathering_place
+    territory_type = Column(String(32), default="inside")  # inside / frontier / outside
+    danger_level = Column(Float, default=0.0)
+    claim_character_id = Column(Text, nullable=True)  # roster_id
+    use_count = Column(Integer, default=0)
+    map_x = Column(Float, nullable=True)              # 0.0–1.0 fraction of map width
+    map_y = Column(Float, nullable=True)              # 0.0–1.0 fraction of map height
+
     occupants = relationship("Character", back_populates="current_location")
 
 
