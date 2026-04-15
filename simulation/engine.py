@@ -51,6 +51,7 @@ from simulation.consequence_engine import generate_consequences_from_scene
 from simulation.silent_actions import generate_daily_silent_actions
 from simulation.transient_state import update_all_transient_states
 from simulation.daybook import generate_reader_summary
+from simulation.social_spread import propagate_scene_aftermath
 
 logger = logging.getLogger("caldwell.engine")
 
@@ -304,6 +305,19 @@ class SimulationEngine:
                     )
                 except Exception as cons_err:
                     logger.warning(f"Consequence generation failed: {cons_err}")
+
+                # ── Witness memories and secondhand rumors ─────────────────────
+                try:
+                    propagate_scene_aftermath(
+                        scene_type=plan.scene_type,
+                        exchanges=exchanges,
+                        participants=plan.characters,
+                        location=plan.location,
+                        sim_day=sim_day,
+                        db=self.db,
+                    )
+                except Exception as spread_err:
+                    logger.warning(f"Social spread failed: {spread_err}")
 
                 return exchanges
 
