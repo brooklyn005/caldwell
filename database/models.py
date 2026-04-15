@@ -37,6 +37,7 @@ class Character(Base):
     memory_score = Column(Integer, default=5)        # knowledge retention, recall accuracy
     persuasion_score = Column(Integer, default=5)    # others defer to them in conversation
     given_name = Column(String(64), nullable=True)                # emerges organically
+    discovery_count = Column(Integer, default=0)                  # confirmed location discoveries
     current_location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     died_at = Column(DateTime, nullable=True)

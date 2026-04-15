@@ -49,6 +49,8 @@ _BEHAVIORAL_ROLE_MAP = {
     "withdrawn": ["outsider", "watcher"],
     "playful": ["dangerous_flirt", "social_center"],
     "protective": ["guardian", "caretaker"],
+    "adventurous": ["pathfinder", "hunter"],
+    "restless": ["pathfinder", "outsider"],
 }
 
 # Role descriptions for prompt injection
@@ -70,6 +72,8 @@ _ROLE_DESCRIPTIONS = {
     "guardian":             "You put yourself between threats and the people who matter to you. That has become known.",
     "watcher":              "You observe more than you participate. People are aware of your watching.",
     "social_center":        "People want to be near you. You generate warmth and ease. Others orbit you.",
+    "pathfinder":           "You have found places others haven't. People know you go further than the rest.",
+    "explorer":             "You move through the edges of what is known. That has become part of how others see you.",
 }
 
 
@@ -184,6 +188,14 @@ def _infer_role(char: Character, sim_day: int, db: Session) -> None:
     if drive in drive_roles:
         role = drive_roles[drive]
         candidate_scores[role] = candidate_scores.get(role, 0) + 0.2
+
+    # Discovery count — pathfinder eligibility
+    discovery_count = getattr(char, "discovery_count", 0) or 0
+    if discovery_count >= 2:
+        candidate_scores["pathfinder"] = candidate_scores.get("pathfinder", 0) + 0.6
+        candidate_scores["explorer"] = candidate_scores.get("explorer", 0) + 0.3
+    elif discovery_count == 1:
+        candidate_scores["explorer"] = candidate_scores.get("explorer", 0) + 0.3
 
     # Age modifiers
     age = char.age

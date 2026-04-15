@@ -195,6 +195,7 @@ tick_interval_minutes = 20
 - **world_expansion.py — assign_map_coordinates:** `assign_map_coordinates(db, territory_type) -> (float, float)` queries all Location rows with coordinates, enforces 80px minimum distance (pixel space: W=900, H=650), zones: `inside` [0.15–0.85 × 0.15–0.85], `frontier` (ring 0.05–0.95 excluding inside), `outside` (ring 0.02–0.98 excluding frontier). 50 random attempts via rejection-sampling `_sample_in_zone()`, falls back to expanding spiral from zone centre (49 rings). `create_emergent_location` updated to call this instead of the old hardcoded position list; sets all 15 emergent fields on the Location row directly. Verified: 20 simulated locations, 0 collisions, all in correct zones.
 - **world_expansion.py — location_discovered broadcast:** `_loc_to_world_map_payload(loc, discoverer_roster_id, sim_day)` builds the full `/api/world_map`-shaped dict from a newly committed Location row. `scan_for_discoveries` now returns this payload per discovery. `engine.py` already iterates discoveries and calls `await broadcast_fn({"type": "location_discovered", "data": disc})` — payload now carries all 15 world_map fields. `websocket_manager.py` confirmed: `async broadcast` and module-level `manager` singleton already present, no changes needed.
 - **world_expansion.py — multi-source discovery detection:** `DiscoveryCandidate` table added to `database/models.py` (`name_hint`, `confidence`, `source_ids_json`, `source_types_json`, `territory_type`, `sim_day`, `promoted_to_location_id`). Signal extraction via `_extract_location_hints()` (requires exploration phrase + no metaphor match) against `_LOCATION_KEYWORDS` list (30 terms). `_METAPHOR_BLOCKLIST` blocks "beyond my reach", "lost in thought", "found myself", "clearing my head", etc. `_upsert_candidate()` accumulates confidence by distinct source type count: 1→0.3, 2→0.6, 3+→0.9. `scan_for_discoveries()` now scans 4 sources: action memories, feeling/monologue memories, scene dialogue exchanges, silent action descriptions. Candidates at confidence ≥ 0.6 promoted to tentative Location; ≥ 0.9 to confirmed. Verified: single action memory → candidate at 0.3; second silent_action signal → confidence 0.6, tentative Location created.
+- **Discovery → character state:** `discovery_count` integer field (default 0) added to `Character` model. `_record_discovery_for_character()` in `world_expansion.py` writes a `memory_type="discovery"` memory ("[Name] found [place] — [excerpt]", emotional_weight=0.8) and increments `discovery_count` — called only on confirmed promotions (confidence ≥ 0.9). `social_roles.py`: "pathfinder" and "explorer" added to `_ROLE_DESCRIPTIONS` and `_BEHAVIORAL_ROLE_MAP` (adventurous/restless → pathfinder). `_infer_role` rule: `discovery_count >= 2` → +0.6 pathfinder, +0.3 explorer; `== 1` → +0.3 explorer. Verified: character with `discovery_count=2` inferred as pathfinder on next role pass.
 - **daily_composer.py**, **consequence_engine.py**, **silent_actions.py**, **transient_state.py**, **social_roles.py**, **location_memory.py**, **daybook.py**, **scene_categorizer.py**, **scene_selector.py**, **pressure_selector.py** — all implemented.
 
 ---
@@ -205,23 +206,7 @@ Execute these one at a time in order. Do not begin the next priority until the c
 
 ---
 
-### PRIORITY 1 — Tie discovery to discoverer character state
-
-**Files to change:** `simulation/world_expansion.py`, `simulation/memory_writer.py`, `simulation/social_roles.py`, `database/models.py`
-
-When a `Location` is promoted to `discovery_stage = "confirmed"`, write a first-person memory for the discovering character in the format: "[Character name] found [place name] — [brief description of discovery context]".
-
-Add a `discovery_count` integer field (default 0) to the `Character` model if not already present. Increment it when a discovery is confirmed for that character.
-
-In `social_roles.py`, add "pathfinder" and "explorer" as valid role types if not already present. Add a role-inference rule: if `discovery_count >= 2`, the character is eligible for the "pathfinder" role.
-
-Log each discovery event with character name, location name, and sim_day.
-
-**Done when:** A character with 2 or more confirmed discoveries is inferred to have the "pathfinder" role on the next role-inference pass.
-
----
-
-### PRIORITY 2 — Increment use_count on Location when used in a scene
+### PRIORITY 1 — Increment use_count on Location when used in a scene
 
 **Files to change:** `simulation/conversation_runner.py` or `simulation/engine.py`
 
@@ -231,7 +216,7 @@ After each scene completes, look up the scene's location by name in the `Locatio
 
 ---
 
-### PRIORITY 3 — Expose discovery history and evolution indicators on the dashboard
+### PRIORITY 2 — Expose discovery history and evolution indicators on the dashboard
 
 **Files to change:** `static/dashboard.html`, `api/routes.py`
 

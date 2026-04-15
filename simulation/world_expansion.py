@@ -525,6 +525,11 @@ def scan_for_discoveries(sim_day: int, db: Session) -> list[dict]:
         # Override discovery_stage with candidate's confidence level
         new_loc.discovery_stage = stage
         candidate.promoted_to_location_id = new_loc.id
+
+        # Only write memory and increment count for confirmed discoveries
+        if stage == "confirmed":
+            _record_discovery_for_character(discoverer, new_loc, sim_day, db)
+
         try:
             db.commit()
         except Exception:
@@ -533,11 +538,41 @@ def scan_for_discoveries(sim_day: int, db: Session) -> list[dict]:
 
         discoveries.append(_loc_to_world_map_payload(new_loc, discoverer.roster_id, sim_day))
         logger.info(
-            f"Day {sim_day}: DiscoveryCandidate '{candidate.name_hint}' "
-            f"promoted to Location (confidence={candidate.confidence}, stage={stage})"
+            f"Day {sim_day}: {discoverer.given_name or discoverer.roster_id} discovered "
+            f"'{new_loc.name}' (confidence={candidate.confidence}, stage={stage})"
         )
 
     return discoveries
+
+
+def _record_discovery_for_character(
+    character: Character,
+    location: Location,
+    sim_day: int,
+    db: Session,
+) -> None:
+    """Write a first-person discovery memory and increment discovery_count."""
+    name = character.given_name or character.roster_id
+    memory_text = (
+        f"{name} found {location.name} — "
+        f"{location.description[:120] if location.description else 'a new place in Caldwell'}."
+    )
+    mem = Memory(
+        character_id=character.id,
+        sim_day=sim_day,
+        memory_type="discovery",
+        content=memory_text,
+        emotional_weight=0.8,
+    )
+    db.add(mem)
+
+    if character.discovery_count is None:
+        character.discovery_count = 0
+    character.discovery_count += 1
+    logger.info(
+        f"Day {sim_day}: {name} discovery_count → {character.discovery_count} "
+        f"(found '{location.name}')"
+    )
 
 
 def _find_discoverer(candidate: DiscoveryCandidate, db: Session) -> "Character | None":
