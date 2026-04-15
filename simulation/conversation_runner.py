@@ -287,6 +287,18 @@ async def run_conversation(
     ))
     db.commit()
 
+    # Increment use_count on the scene's location
+    try:
+        from database.models import Location as LocationModel
+        loc_row = db.query(LocationModel).filter(LocationModel.name == location.name).first()
+        if loc_row:
+            loc_row.use_count = (loc_row.use_count or 0) + 1
+            db.commit()
+        else:
+            logger.warning(f"use_count: location '{location.name}' not found in Location table")
+    except Exception as e:
+        logger.warning(f"use_count increment failed for '{location.name}': {e}")
+
     if broadcast_fn:
         await broadcast_fn({
             "type": "conversation_end",
