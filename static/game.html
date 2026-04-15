@@ -535,6 +535,44 @@ class CaldwellScene extends Phaser.Scene {
     }
   }
 
+  // Render a single location node onto the map (used for dynamically discovered locations)
+  renderLocationNode(name, node) {
+    const style = LOCATION_STYLE[name] || { w: 80, h: 50 };
+    const cx = node.x * W;
+    const cy = node.y * H;
+    const hw = style.w / 2;
+    const hh = style.h / 2;
+
+    const g = this.add.graphics();
+
+    // Emergent fill — teal tint distinct from seed locations
+    g.fillStyle(0x0d2b2b, 1);
+    g.fillRoundedRect(cx - hw, cy - hh, style.w, style.h, 8);
+
+    // Bright border to signal discovery
+    g.lineStyle(1.5, 0x3fb950, 0.9);
+    g.strokeRoundedRect(cx - hw, cy - hh, style.w, style.h, 8);
+
+    // Diamond marker at center
+    g.fillStyle(0x3fb950, 0.7);
+    g.fillTriangle(cx, cy - 6, cx + 5, cy, cx, cy + 6);
+    g.fillTriangle(cx, cy - 6, cx - 5, cy, cx, cy + 6);
+
+    // Label — slightly brighter than seed label color
+    const shortName = name.replace('Caldwell Public ', '').replace('The ', '');
+    this.add.text(cx, cy + 10, shortName, {
+      fontSize: '8px',
+      color: '#8bdb8b',
+      fontFamily: 'SF Mono, Fira Code, monospace',
+      align: 'center',
+      wordWrap: { width: style.w - 8 },
+    }).setOrigin(0.5, 0);
+
+    // Fade in
+    g.setAlpha(0);
+    this.tweens.add({ targets: g, alpha: 1, duration: 800, ease: 'Sine.easeOut' });
+  }
+
   onMapClick(pointer) {
     // Clicking empty space deselects
     selectedId = null;
@@ -679,6 +717,22 @@ function handleWS(msg) {
       `${d.group_conversations||0} groups, ` +
       `${d.idle_characters||0} monologues | $${cost}`
     );
+
+  } else if (msg.type === 'location_discovered') {
+    const loc = d;
+    if (!loc.name || loc.map_x == null || loc.map_y == null) return;
+    const node = {
+      x: loc.map_x,
+      y: loc.map_y,
+      name: loc.name,
+      id: loc.id,
+      is_emergent: loc.is_emergent,
+      territory_type: loc.territory_type,
+    };
+    locationNodes[loc.name] = node;
+    console.log(`[Caldwell] Location discovered: "${loc.name}" at (${loc.map_x.toFixed(3)}, ${loc.map_y.toFixed(3)}) — ${loc.territory_type || 'unknown'}`);
+    addFeed('system', `New location discovered: ${loc.name}`);
+    if (scene) scene.renderLocationNode(loc.name, node);
   }
 }
 
