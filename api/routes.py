@@ -85,7 +85,17 @@ def get_character(roster_id: str, db: Session = Depends(get_db)):
 
 
 def _char_summary(c: Character, db: Session) -> dict:
+    from database.models import SocialRole, CharacterTransientState
     loc = db.query(Location).filter(Location.id == c.current_location_id).first()
+
+    role = db.query(SocialRole).filter(SocialRole.character_id == c.id).first()
+    transient = (
+        db.query(CharacterTransientState)
+        .filter(CharacterTransientState.character_id == c.id)
+        .order_by(CharacterTransientState.sim_day.desc())
+        .first()
+    )
+
     return {
         "roster_id": c.roster_id,
         "gender": c.gender,
@@ -99,6 +109,25 @@ def _char_summary(c: Character, db: Session) -> dict:
         "physical_description": c.physical_description,
         "natural_tendency": c.natural_tendency,
         "current_location": loc.name if loc else None,
+        "social_role": {
+            "primary_role": role.primary_role,
+            "secondary_role": role.secondary_role,
+            "role_confidence": round(role.role_confidence, 2),
+            "public_visibility": round(role.public_visibility, 2),
+            "public_reputation": role.public_reputation,
+            "emerged_day": role.emerged_day,
+        } if role else None,
+        "transient_state": {
+            "sim_day": transient.sim_day,
+            "emotional_tags": transient.emotional_tags,
+            "hunger_level": round(transient.hunger_level, 1),
+            "fatigue_level": round(transient.fatigue_level, 1),
+            "shame_active": transient.shame_active,
+            "hope_active": transient.hope_active,
+            "obsession_text": transient.obsession_text,
+            "guardedness": round(transient.guardedness, 2),
+            "loneliness": round(transient.loneliness, 2),
+        } if transient else None,
     }
 
 
@@ -148,6 +177,7 @@ def _char_detail(c: Character, db: Session) -> dict:
 
 @router.get("/api/locations")
 def list_locations(db: Session = Depends(get_db)):
+    from database.models import LocationMemory
     locs = db.query(Location).all()
     result = []
     for loc in locs:
@@ -159,6 +189,7 @@ def list_locations(db: Session = Depends(get_db)):
             )
             .all()
         )
+        mem = db.query(LocationMemory).filter(LocationMemory.location_id == loc.id).first()
         result.append({
             "id": loc.id,
             "name": loc.name,
@@ -171,6 +202,18 @@ def list_locations(db: Session = Depends(get_db)):
                 {"roster_id": c.roster_id, "given_name": c.given_name}
                 for c in occupants
             ],
+            "location_memory": {
+                "dominant_mood": mem.dominant_mood,
+                "privacy_score": round(mem.privacy_score, 2) if mem.privacy_score is not None else None,
+                "charge_level": round(mem.charge_level, 2) if mem.charge_level is not None else None,
+                "identity_tags": json.loads(mem.identity_tags_json or "[]"),
+                "scene_counts": json.loads(mem.scene_counts_json or "{}"),
+                "last_notable_event": mem.last_notable_event,
+                "last_notable_day": mem.last_notable_day,
+                "who_controls": mem.who_controls,
+                "who_avoids": json.loads(mem.who_avoids or "[]"),
+                "first_recorded_day": mem.first_recorded_day,
+            } if mem else None,
         })
     return result
 
@@ -2160,3 +2203,46 @@ def get_open_questions(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         return []
+
+
+# ── Reader summaries ──────────────────────────────────────────────────────────
+
+def _format_summary(s) -> dict:
+    return {
+        "sim_day": s.sim_day,
+        "daybook": s.daybook,
+        "active_threads": json.loads(s.active_threads_json or "[]"),
+        "shifting_roles": json.loads(s.shifting_roles_json or "[]"),
+        "consequences": json.loads(s.consequences_json or "[]"),
+        "place_updates": json.loads(s.place_updates_json or "[]"),
+        "character_arcs": json.loads(s.character_arcs_json or "[]"),
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
+
+@router.get("/api/summary/today")
+def get_summary_today(db: Session = Depends(get_db)):
+    """Return today's ReaderSummary."""
+    from database.models import ReaderSummary
+    summary = (
+        db.query(ReaderSummary)
+        .order_by(ReaderSummary.sim_day.desc())
+        .first()
+    )
+    if not summary:
+        raise HTTPException(status_code=404, detail="No summary available yet")
+    return _format_summary(summary)
+
+
+@router.get("/api/summary/{sim_day}")
+def get_summary_by_day(sim_day: int, db: Session = Depends(get_db)):
+    """Return the ReaderSummary for a specific sim day."""
+    from database.models import ReaderSummary
+    summary = (
+        db.query(ReaderSummary)
+        .filter(ReaderSummary.sim_day == sim_day)
+        .first()
+    )
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"No summary for day {sim_day}")
+    return _format_summary(summary)

@@ -161,6 +161,7 @@ tick_interval_minutes = 20
 - `social_spread.py` — witness memories and secondhand rumors after high-intensity scenes (`argument`, `status_challenge`, `quiet_intimacy`). Distortion weighted by trust relationship. Rumors seeded for next sim_day at 70% witness weight. Wired into engine.py after consequence generation. Verified with day 4 argument producing 2 witness memories + 2 next-day rumors.
 - `open_question.py` — three pruning mechanisms added via `prune_open_questions()` (called each tick from engine.py): (1) semantic redundancy merging via Jaccard overlap on content keywords; (2) age-based abandonment for low-intensity questions unsurfaced 10+ days; (3) forgotten resolution path writes a first-person observation memory when any question fades. Verified: merge fired at tick 5.
 - `rhythms.py` — recurring community rhythms module. 7 rhythms defined (hunt day every 4 days, washing day every 3, storytelling night every 5, food sorting every 2, teaching circle every 7, rooftop gathering every 6, workshop day every 5). Each rhythm has cadence, offset, scene type, location affinity, preferred drives, and norm reinforced. `daily_composer.py` calls `get_due_rhythms()` before the slot loop and preferentially fills slot 2 with a rhythm-driven scene via `build_rhythm_scene_plan()` when one is due. Daybook notes rhythm days.
+- `api/routes.py` — player-facing endpoints added: `GET /api/summary/today` and `GET /api/summary/{sim_day}` return `ReaderSummary` rows as JSON (daybook, threads, roles, consequences, place updates, arcs). `GET /api/characters` enhanced with `social_role` (from `SocialRole`) and `transient_state` (most recent `CharacterTransientState`) per character. `GET /api/locations` enhanced with `location_memory` (from `LocationMemory`) per location. All new fields are null-safe.
 - `daily_composer.py` — Day Composition Engine with slot categories, day archetypes, pair cooldowns, caps
 - `consequence_engine.py` — rule-based consequence generation, no API calls
 - `silent_actions.py` — off-screen activity layer
@@ -175,14 +176,7 @@ tick_interval_minutes = 20
 
 ## Implementation priorities (in order)
 
-### Priority 1 — Player-facing API endpoints
-`daybook.py` generates `ReaderSummary` records but nothing serves them to a frontend. Add routes to `api/` (FastAPI):
-- `GET /summary/today` — return today's ReaderSummary as JSON
-- `GET /summary/{sim_day}` — return a specific day's summary
-- `GET /characters` — return all living characters with current role and transient state
-- `GET /locations` — return all locations with their LocationMemory
-
-### Priority 2 — Embodied scene directive (deeper prompt wiring)
+### Priority 1 — Embodied scene directive (deeper prompt wiring)
 `scene_builder.py` generates good physical context. `prompt_builder.py` needs to use it more aggressively. The scene frame should establish: who is standing where, what their hands are doing, what the light and smell is. Characters should not speak until after a physical action beat. This means the first message in a scene should come from the engine (not the character) as a brief scene-setting paragraph, then char_a speaks into that environment.
 
 ---
