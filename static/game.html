@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caldwell — Live Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0e12;
+    color: #c9d1d9;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 14px;
+    background: #0d1117;
+    border-bottom: 1px solid #21262d;
+    flex-shrink: 0;
+  }
+  .title { font-size: 13px; font-weight: 700; color: #58a6ff; letter-spacing: 3px; }
+  #clock { color: #3fb950; font-weight: 600; }
+  #ws-status { width: 8px; height: 8px; border-radius: 50%; background: #484f58; display: inline-block; }
+  #ws-status.live { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+  .sep { color: #484f58; }
+  #day-display { color: #d29922; }
+  a { color: #58a6ff; text-decoration: none; font-size: 11px; }
+  a:hover { text-decoration: underline; }
+
+  #layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  #game-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  #game-container canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* Right panel */
+  #side-panel {
+    width: 280px;
+    flex-shrink: 0;
+    border-left: 1px solid #21262d;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #0d1117;
+  }
+  #char-detail {
+    padding: 10px 12px;
+    border-bottom: 1px solid #21262d;
+    min-height: 160px;
+    flex-shrink: 0;
+  }
+  #char-detail h3 { font-size: 12px; color: #58a6ff; margin-bottom: 6px; }
+  .detail-row { display: flex; gap: 6px; margin-bottom: 2px; }
+  .detail-label { color: #484f58; min-width: 70px; }
+  .detail-val { color: #c9d1d9; }
+  #char-tendency { font-size: 10px; color: #484f58; line-height: 1.5; margin-top: 6px; font-style: italic; }
+
+  #live-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column-reverse;
+  }
+  #live-feed::-webkit-scrollbar { width: 3px; }
+  #live-feed::-webkit-scrollbar-thumb { background: #21262d; border-radius: 2px; }
+
+  .feed-line {
+    padding: 2px 0;
+    line-height: 1.5;
+    border-bottom: 1px solid #0d1117;
+    font-size: 10px;
+  }
+  .feed-line .speaker { font-weight: 600; margin-right: 4px; }
+  .feed-line.monologue { opacity: 0.5; font-style: italic; }
+  .feed-line.system { color: #484f58; }
+  .feed-line.group-tag { color: #d29922; font-size: 9px; letter-spacing: 1px; }
+
+  /* Legend */
+  #legend {
+    padding: 6px 10px;
+    border-top: 1px solid #21262d;
+    flex-shrink: 0;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .leg-item { display: flex; align-items: center; gap: 4px; font-size: 9px; color: #484f58; }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Disposition colors */
+  .d-despairing  { color: #f85149; }
+  .d-frustrated  { color: #d29922; }
+  .d-neutral     { color: #484f58; }
+  .d-content     { color: #3fb950; }
+  .d-flourishing { color: #58a6ff; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="title">◈ CALDWELL</span>
+  <span class="sep">|</span>
+  <span id="clock">Year 0, January 1</span>
+  <span class="sep">|</span>
+  <span id="ws-status"></span>&nbsp;<span id="ws-label" style="color:#484f58">CONNECTING</span>
+  <span class="sep">|</span>
+  <span id="day-display">Day 1</span>
+  <span style="margin-left:auto;">
+    <a href="/">← Log</a>&nbsp;&nbsp;<a href="/analytics">📊 Analytics</a>
+  </span>
+</div>
+
+<div id="layout">
+  <div id="game-container">
+  <div id="overlay-controls" style="position:absolute;top:8px;left:8px;z-index:10;display:flex;gap:6px;">
+    <button onclick="toggleHeatmap()" id="btn-heat"
+      style="background:#0d111788;border:1px solid #21262d;color:#484f58;padding:4px 8px;
+             font-family:SF Mono,monospace;font-size:9px;cursor:pointer;border-radius:3px;">
+      🌡 Heatmap
+    </button>
+    <button onclick="toggleRelWeb()" id="btn-rel"
+      style="background:#0d111788;border:1px solid #21262d;color:#484f58;padding:4px 8px;
+             font-family:SF Mono,monospace;font-size:9px;cursor:pointer;border-radius:3px;">
+      🕸 Relations
+    </button>
+  </div>
+</div>
+
+  <div id="side-panel">
+    <div id="char-detail">
+      <h3>Click a character</h3>
+      <div id="char-detail-body" style="color:#484f58;font-size:10px;margin-top:4px;">
+        Select any dot on the map to inspect them.
+      </div>
+    </div>
+    <div id="live-feed"></div>
+    <div id="legend">
+      <div class="leg-item"><div class="leg-dot" style="background:#f778ba"></div>Female</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#58a6ff"></div>Male</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#f85149"></div>Despairing</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#d29922"></div>Frustrated</div>
+      <div class="leg-item"><div class="leg-dot" style="background:#3fb950"></div>Flourishing</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+
+const W = 900, H = 650;
+
+// Location layout on the map (percentage of W x H)
+const LOCATION_LAYOUT = {
+  'Central Square':           { x: 0.50, y: 0.50, w: 110, h: 80,  color: 0x1a3320 },
+  'The Meridian':             { x: 0.50, y: 0.22, w: 90,  h: 60,  color: 0x1a2040 },
+  'Bayou Market':             { x: 0.73, y: 0.47, w: 85,  h: 60,  color: 0x2a1a10 },
+  'The Workshop':             { x: 0.70, y: 0.70, w: 80,  h: 55,  color: 0x201a10 },
+  'Caldwell Public Library':  { x: 0.27, y: 0.28, w: 85,  h: 60,  color: 0x1a1a2a },
+  'Community Center':         { x: 0.50, y: 0.76, w: 95,  h: 55,  color: 0x1a2010 },
+  'Riverside Park':           { x: 0.15, y: 0.55, w: 75,  h: 90,  color: 0x102010 },
+  'Warehouse Row':            { x: 0.60, y: 0.88, w: 100, h: 45,  color: 0x1a1510 },
+  'Rooftop Garden':           { x: 0.50, y: 0.10, w: 80,  h: 45,  color: 0x102018 },
+  'The Chapel':               { x: 0.75, y: 0.25, w: 70,  h: 50,  color: 0x20151a },
+  'The Schoolhouse':          { x: 0.30, y: 0.12, w: 80,  h: 50,  color: 0x1a1820 },
+  'Lakeview Flats':           { x: 0.14, y: 0.78, w: 80,  h: 55,  color: 0x101a18 },
+};
+
+const GENDER_COLOR  = { F: 0xf778ba, M: 0x58a6ff };
+const GENDER_COLOR_CSS = { F: '#f778ba', M: '#58a6ff' };
+const DISP_COLOR = {
+  despairing: 0xf85149,
+  frustrated: 0xd29922,
+  neutral: null,
+  content: 0x3fb950,
+  flourishing: 0x79c0ff,
+};
+const MODEL_COLOR = { haiku: '#e6904a', deepseek: '#39d353' };
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let characters = {};      // roster_id -> char data
+let charSprites = {};     // roster_id -> { circle, label, bubble, bubbleText }
+let activeConvos = {};    // convo_key -> { line, timer }
+let selectedId = null;
+let phaserScene = null;
+
+// ── Phaser Scene ──────────────────────────────────────────────────────────────
+
+class CaldwellScene extends Phaser.Scene {
+  constructor() { super({ key: 'CaldwellScene' }); }
+
+  create() {
+    phaserScene = this;
+    this.graphics = this.add.graphics();
+    this.drawMap();
+    this.drawCreek();
+    this.input.on('pointerdown', this.onMapClick, this);
+    loadCharacters(this);
+  }
+
+  drawMap() {
+    const g = this.graphics;
+
+    // Background — warm southern night
+    g.fillStyle(0x0c1208);
+    g.fillRect(0, 0, W, H);
+
+    // Draw each location zone
+    for (const [name, cfg] of Object.entries(LOCATION_LAYOUT)) {
+      const cx = cfg.x * W;
+      const cy = cfg.y * H;
+      const hw = cfg.w / 2;
+      const hh = cfg.h / 2;
+
+      // Zone fill
+      g.fillStyle(cfg.color, 1);
+      g.fillRoundedRect(cx - hw, cy - hh, cfg.w, cfg.h, 8);
+
+      // Zone border
+      g.lineStyle(1, 0x21262d, 0.8);
+      g.strokeRoundedRect(cx - hw, cy - hh, cfg.w, cfg.h, 8);
+
+      // Location label
+      const shortName = name.replace('Caldwell Public ', '').replace('The ', '');
+      this.add.text(cx, cy, shortName, {
+        fontSize: '9px',
+        color: '#6e7681',
+        fontFamily: 'SF Mono, Fira Code, monospace',
+        align: 'center',
+        wordWrap: { width: cfg.w - 8 },
+      }).setOrigin(0.5, 0.5);
+    }
+
+    // Paths between connected locations
+    g.lineStyle(1, 0x1a2010, 0.6);
+    const connections = [
+      ['Central Square', 'The Meridian'],
+      ['Central Square', 'Bayou Market'],
+      ['Central Square', 'Community Center'],
+      ['Central Square', 'Caldwell Public Library'],
+      ['Central Square', 'Riverside Park'],
+      ['The Meridian', 'Rooftop Garden'],
+      ['The Meridian', 'The Chapel'],
+      ['The Meridian', 'The Schoolhouse'],
+      ['Bayou Market', 'The Workshop'],
+      ['Community Center', 'Warehouse Row'],
+      ['Riverside Park', 'Lakeview Flats'],
+    ];
+    for (const [a, b] of connections) {
+      const la = LOCATION_LAYOUT[a];
+      const lb = LOCATION_LAYOUT[b];
+      if (la && lb) {
+        g.lineBetween(la.x * W, la.y * H, lb.x * W, lb.y * H);
+      }
+    }
+  }
+
+  drawCreek() {
+    const g = this.graphics;
+    // A winding creek along the west side
+    g.lineStyle(6, 0x0c2030, 0.7);
+    const curve = new Phaser.Curves.Spline([
+      60, 0,
+      55, 120,
+      70, 250,
+      55, 350,
+      75, 450,
+      65, 580,
+      60, H,
+    ]);
+    const points = curve.getPoints(60);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x, points[i].y);
+    }
+    g.strokePath();
+    // Lighter highlight
+    g.lineStyle(2, 0x1a4060, 0.5);
+    g.beginPath();
+    g.moveTo(points[0].x - 2, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x - 2, points[i].y);
+    }
+    g.strokePath();
+  }
+
+  spawnCharacter(char) {
+    const loc = LOCATION_LAYOUT[char.location] || LOCATION_LAYOUT['Central Square'];
+    const spread = 22;
+    // Spread characters within location zone
+    const existing = Object.values(charSprites).filter(
+      s => s.locationName === char.location
+    ).length;
+    const angle = (existing * 47) % 360;
+    const r = Math.min(spread, 8 + existing * 4);
+    const ox = Math.cos(Phaser.Math.DegToRad(angle)) * r;
+    const oy = Math.sin(Phaser.Math.DegToRad(angle)) * r;
+    const x = loc.x * W + ox;
+    const y = loc.y * H + oy;
+
+    // Glow ring for disposition
+    const dispColor = DISP_COLOR[char.disposition];
+    let glow = null;
+    if (dispColor) {
+      glow = this.add.circle(x, y, 10, dispColor, 0.3);
+      this.tweens.add({
+        targets: glow,
+        alpha: { from: 0.1, to: 0.5 },
+        scale: { from: 0.9, to: 1.2 },
+        duration: 1500 + Math.random() * 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    // Character dot
+    const baseColor = GENDER_COLOR[char.gender] || 0x58a6ff;
+    const circle = this.add.circle(x, y, 7, baseColor, 1)
+      .setInteractive({ cursor: 'pointer' })
+      .on('pointerdown', () => selectCharacter(char.roster_id));
+
+    // Hover effect
+    circle.on('pointerover', () => {
+      circle.setScale(1.4);
+      labelText.setVisible(true);
+    });
+    circle.on('pointerout', () => {
+      if (selectedId !== char.roster_id) circle.setScale(1.0);
+      labelText.setVisible(false);
+    });
+
+    // Roster ID label (visible on hover or when selected)
+    const shortId = char.given_name
+      ? char.given_name.substring(0, 4)
+      : char.roster_id;
+    const labelText = this.add.text(x, y - 12, shortId, {
+      fontSize: '8px',
+      color: '#c9d1d9',
+      fontFamily: 'SF Mono, monospace',
+      backgroundColor: '#0d1117cc',
+      padding: { x: 2, y: 1 },
+    }).setOrigin(0.5, 1).setVisible(false);
+
+    // Speech bubble (hidden by default)
+    const bubble = this.add.rectangle(x, y - 28, 120, 28, 0x161b22, 0.92)
+      .setVisible(false).setOrigin(0.5, 1);
+    const bubbleText = this.add.text(x, y - 32, '', {
+      fontSize: '8px',
+      color: '#c9d1d9',
+      fontFamily: 'SF Mono, monospace',
+      wordWrap: { width: 112 },
+      align: 'left',
+    }).setOrigin(0.5, 1).setVisible(false);
+
+    charSprites[char.roster_id] = {
+      circle, labelText, bubble, bubbleText, glow,
+      x, y,
+      locationName: char.location,
+    };
+  }
+
+  moveCharacter(rosterId, newLocation) {
+    const sprite = charSprites[rosterId];
+    if (!sprite) return;
+    const loc = LOCATION_LAYOUT[newLocation] || LOCATION_LAYOUT['Central Square'];
+
+    // Find position within location (same spread logic)
+    const atLoc = Object.values(charSprites).filter(
+      s => s.locationName === newLocation && s !== sprite
+    ).length;
+    const angle = (atLoc * 47) % 360;
+    const r = Math.min(22, 8 + atLoc * 4);
+    const ox = Math.cos(Phaser.Math.DegToRad(angle)) * r;
+    const oy = Math.sin(Phaser.Math.DegToRad(angle)) * r;
+    const tx = loc.x * W + ox;
+    const ty = loc.y * H + oy;
+
+    sprite.locationName = newLocation;
+
+    // Animate movement
+    this.tweens.add({
+      targets: [sprite.circle, sprite.labelText, sprite.bubble, sprite.bubbleText],
+      x: tx,
+      y: (obj) => {
+        if (obj === sprite.bubble) return ty - 28;
+        if (obj === sprite.bubbleText) return ty - 32;
+        if (obj === sprite.labelText) return ty - 12;
+        return ty;
+      },
+      duration: 1200,
+      ease: 'Sine.easeInOut',
+    });
+    if (sprite.glow) {
+      this.tweens.add({
+        targets: sprite.glow,
+        x: tx, y: ty,
+        duration: 1200,
+        ease: 'Sine.easeInOut',
+      });
+    }
+    sprite.x = tx;
+    sprite.y = ty;
+  }
+
+  showSpeech(rosterId, text, isMonologue = false) {
+    const sprite = charSprites[rosterId];
+    if (!sprite) return;
+    const truncated = text.length > 60 ? text.substring(0, 58) + '…' : text;
+    const lines = Math.ceil(truncated.length / 20);
+    const bh = 14 + lines * 10;
+
+    sprite.bubble
+      .setSize(130, bh)
+      .setAlpha(isMonologue ? 0.5 : 0.92)
+      .setVisible(true);
+    sprite.bubbleText
+      .setText(truncated)
+      .setAlpha(isMonologue ? 0.55 : 1)
+      .setVisible(true);
+
+    // Auto-hide after a few seconds
+    if (sprite._speechTimer) sprite._speechTimer.remove();
+    sprite._speechTimer = this.time.delayedCall(isMonologue ? 3000 : 5000, () => {
+      this.tweens.add({
+        targets: [sprite.bubble, sprite.bubbleText],
+        alpha: 0,
+        duration: 600,
+        onComplete: () => {
+          sprite.bubble.setVisible(false);
+          sprite.bubbleText.setVisible(false);
+          sprite.bubble.setAlpha(isMonologue ? 0.5 : 0.92);
+          sprite.bubbleText.setAlpha(isMonologue ? 0.55 : 1);
+        },
+      });
+    });
+  }
+
+  showConvoLine(rosterA, rosterB) {
+    const sa = charSprites[rosterA];
+    const sb = charSprites[rosterB];
+    if (!sa || !sb) return;
+    const key = [rosterA, rosterB].sort().join('_');
+    if (activeConvos[key]) {
+      activeConvos[key].line.destroy();
+    }
+    const line = this.add.graphics();
+    line.lineStyle(1, 0x58a6ff, 0.3);
+    line.lineBetween(sa.x, sa.y, sb.x, sb.y);
+    // Auto-remove after 8 seconds
+    const timer = this.time.delayedCall(8000, () => {
+      this.tweens.add({
+        targets: line,
+        alpha: 0,
+        duration: 1000,
+        onComplete: () => line.destroy(),
+      });
+      delete activeConvos[key];
+    });
+    activeConvos[key] = { line, timer };
+  }
+
+  updateDisposition(rosterId, disposition) {
+    const sprite = charSprites[rosterId];
+    if (!sprite) return;
+    const dispColor = DISP_COLOR[disposition];
+    if (sprite.glow) {
+      sprite.glow.destroy();
+      sprite.glow = null;
+    }
+    if (dispColor) {
+      sprite.glow = this.add.circle(sprite.x, sprite.y, 10, dispColor, 0.3);
+      this.tweens.add({
+        targets: sprite.glow,
+        alpha: { from: 0.1, to: 0.5 },
+        scale: { from: 0.9, to: 1.2 },
+        duration: 1500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+  }
+
+  onMapClick(pointer) {
+    // Clicking empty space deselects
+    selectedId = null;
+    renderCharDetail(null);
+    Object.values(charSprites).forEach(s => s.circle.setScale(1.0));
+  }
+}
+
+// ── Load characters from API ──────────────────────────────────────────────────
+
+async function loadCharacters(scene) {
+  try {
+    const r = await fetch('/api/positions');
+    const data = await r.json();
+    data.forEach(char => {
+      characters[char.roster_id] = char;
+      scene.spawnCharacter(char);
+    });
+    addFeed('system', `${data.length} residents loaded in Caldwell.`);
+  } catch (e) {
+    addFeed('system', 'Could not load characters from server.');
+  }
+}
+
+// ── Character selection ───────────────────────────────────────────────────────
+
+function selectCharacter(rosterId) {
+  selectedId = rosterId;
+  // Reset all scales
+  Object.values(charSprites).forEach(s => s.circle.setScale(1.0));
+  // Highlight selected
+  if (charSprites[rosterId]) {
+    charSprites[rosterId].circle.setScale(1.6);
+    charSprites[rosterId].labelText.setVisible(true);
+  }
+  renderCharDetail(characters[rosterId]);
+}
+
+function renderCharDetail(char) {
+  const body = document.getElementById('char-detail-body');
+  const title = document.querySelector('#char-detail h3');
+  if (!char) {
+    title.textContent = 'Click a character';
+    body.innerHTML = '<span style="color:#484f58">Select any dot on the map.</span>';
+    return;
+  }
+  const dispClass = 'd-' + (char.disposition || 'neutral');
+  const modelColor = MODEL_COLOR[char.ai_model] || '#888';
+  title.innerHTML = `${char.given_name || char.roster_id} <span class="${dispClass}">${char.disposition||'neutral'}</span>`;
+  body.innerHTML = `
+    <div class="detail-row"><span class="detail-label">Age</span><span class="detail-val">${char.age}${char.is_minor?' (minor)':''}</span></div>
+    <div class="detail-row"><span class="detail-label">Drive</span><span class="detail-val">${char.core_drive}</span></div>
+    <div class="detail-row"><span class="detail-label">Model</span><span class="detail-val" style="color:${modelColor}">${char.ai_model}</span></div>
+    <div class="detail-row"><span class="detail-label">Location</span><span class="detail-val">${char.location||'?'}</span></div>
+    <div class="detail-row"><span class="detail-label">Disp. avg</span><span class="detail-val class="${dispClass}">${char.disposition_avg >= 0 ? '+' : ''}${(char.disposition_avg||0).toFixed(2)}</span></div>
+    <div id="char-tendency">${char.natural_tendency||''}</div>
+  `;
+}
+
+// ── Live feed ─────────────────────────────────────────────────────────────────
+
+function addFeed(type, text, rosterId) {
+  const feed = document.getElementById('live-feed');
+  const div = document.createElement('div');
+  div.className = 'feed-line ' + type;
+  const char = rosterId ? characters[rosterId] : null;
+  const color = char ? GENDER_COLOR_CSS[char.gender] : '#484f58';
+  const name = char ? (char.given_name || rosterId) : '';
+
+  if (type === 'dialogue' || type === 'monologue') {
+    div.innerHTML = `<span class="speaker" style="color:${color}">${name}</span>${text}`;
+  } else {
+    div.textContent = text;
+  }
+  feed.insertBefore(div, feed.firstChild);
+  while (feed.children.length > 300) feed.removeChild(feed.lastChild);
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('ws-status').className = 'live';
+    document.getElementById('ws-label').textContent = 'LIVE';
+    document.getElementById('ws-label').style.color = '#3fb950';
+    setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+  };
+
+  ws.onmessage = (e) => {
+    try { handleWS(JSON.parse(e.data)); } catch (_) {}
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-status').className = '';
+    document.getElementById('ws-label').textContent = 'RECONNECTING';
+    document.getElementById('ws-label').style.color = '#d29922';
+    setTimeout(connectWS, 4000);
+  };
+}
+
+function handleWS(msg) {
+  const d = msg.data || {};
+  const scene = phaserScene;
+
+  if (msg.type === 'new_day') {
+    document.getElementById('clock').textContent = d.display || '';
+    document.getElementById('day-display').textContent = `Day ${d.total_days}`;
+    addFeed('system', `━━ ${d.display} ━━`);
+    // Refresh positions after day changes
+    setTimeout(() => refreshPositions(scene), 3000);
+
+  } else if (msg.type === 'conversation_start') {
+    if (d.group) {
+      addFeed('group-tag', `GROUP @ ${d.location}: ${(d.group_names||d.group).join(', ')}`);
+    } else {
+      const aName = d.char_a_name || d.char_a;
+      const bName = d.char_b_name || d.char_b;
+      addFeed('system', `${aName} ↔ ${bName} @ ${d.location}`);
+      if (scene) scene.showConvoLine(d.char_a, d.char_b);
+    }
+
+  } else if (msg.type === 'dialogue_line') {
+    const rosterId = d.roster_id;
+    if (characters[rosterId]) {
+      characters[rosterId].location = d.location;
+    }
+    addFeed('dialogue', d.text, rosterId);
+    if (scene) scene.showSpeech(rosterId, d.text, false);
+
+  } else if (msg.type === 'monologue') {
+    addFeed('monologue', d.text, d.roster_id);
+    if (scene) scene.showSpeech(d.roster_id, d.text, true);
+
+  } else if (msg.type === 'tick_complete') {
+    // Update cost
+    const cost = (d.cost_today || 0).toFixed(4);
+    addFeed('system',
+      `Tick done — ${d.pair_conversations||0} pairs, ` +
+      `${d.group_conversations||0} groups, ` +
+      `${d.idle_characters||0} monologues | $${cost}`
+    );
+  }
+}
+
+async function refreshPositions(scene) {
+  if (!scene) return;
+  try {
+    const r = await fetch('/api/positions');
+    const data = await r.json();
+    data.forEach(char => {
+      const prev = characters[char.roster_id];
+      characters[char.roster_id] = char;
+      // Move sprite if location changed
+      if (prev && prev.location !== char.location) {
+        scene.moveCharacter(char.roster_id, char.location);
+      }
+      // Update disposition glow
+      if (prev && prev.disposition !== char.disposition) {
+        scene.updateDisposition(char.roster_id, char.disposition);
+      }
+      // Update name label if name was given
+      if (char.given_name && charSprites[char.roster_id]) {
+        charSprites[char.roster_id].labelText.setText(char.given_name.substring(0, 6));
+      }
+      // Update selected panel
+      if (char.roster_id === selectedId) renderCharDetail(char);
+    });
+  } catch (_) {}
+
+  // Render emergent locations
+  try {
+    const locR = await fetch('/api/locations');
+    const allLocs = await locR.json();
+    const emergent = allLocs.filter(function(l) { return l.is_emergent && l.map_x !== null; });
+    if (phaserScene && emergent.length) {
+      if (window._emergentMarkers) window._emergentMarkers.forEach(function(m) { m.destroy(); });
+      window._emergentMarkers = [];
+      emergent.forEach(function(loc) {
+        var ex = loc.map_x * W, ey = loc.map_y * H;
+        var color = loc.is_outside ? 0xe6904a : 0x58a6ff;
+        var g = phaserScene.add.graphics();
+        g.lineStyle(2, color, 0.8);
+        g.strokeRect(ex - 22, ey - 12, 44, 24);
+        g.fillStyle(color, 0.12);
+        g.fillRect(ex - 22, ey - 12, 44, 24);
+        var t = phaserScene.add.text(ex, ey, loc.name.substring(0, 12), {
+          fontSize: '7px', color: loc.is_outside ? '#e6904a' : '#58a6ff',
+          fontFamily: 'SF Mono, monospace'
+        }).setOrigin(0.5, 0.5);
+        window._emergentMarkers.push(g, t);
+      });
+    }
+  } catch(_) {}
+}
+
+// ── Overlay state ─────────────────────────────────────────────────────────────
+let heatmapOn = false;
+let relWebOn = false;
+let heatmapData = [];
+let relWebData = [];
+let heatOverlay = null;
+let relOverlay = null;
+
+function toggleHeatmap() {
+  heatmapOn = !heatmapOn;
+  const btn = document.getElementById('btn-heat');
+  btn.style.borderColor = heatmapOn ? '#d29922' : '#21262d';
+  btn.style.color = heatmapOn ? '#d29922' : '#484f58';
+  if (heatmapOn) loadHeatmap(); else clearHeatmap();
+}
+
+function toggleRelWeb() {
+  relWebOn = !relWebOn;
+  const btn = document.getElementById('btn-rel');
+  btn.style.borderColor = relWebOn ? '#3fb950' : '#21262d';
+  btn.style.color = relWebOn ? '#3fb950' : '#484f58';
+  if (relWebOn) loadRelWeb(); else clearRelWeb();
+}
+
+async function loadHeatmap() {
+  try {
+    const r = await fetch('/api/heatmap?days=7');
+    heatmapData = await r.json();
+    renderHeatmap();
+  } catch(_) {}
+}
+
+function renderHeatmap() {
+  if (!phaserScene || !heatmapOn) return;
+  if (heatOverlay) { heatOverlay.destroy(); heatOverlay = null; }
+  const g = phaserScene.add.graphics();
+  heatmapData.forEach(entry => {
+    const loc = LOCATION_LAYOUT[entry.location];
+    if (!loc) return;
+    const cx = loc.x * W, cy = loc.y * H;
+    const r = Math.max(loc.w, loc.h) * 0.65 * (0.5 + entry.intensity * 0.5);
+    const alpha = 0.12 + entry.intensity * 0.3;
+    // Color: hot = amber->red, cold = blue
+    const color = entry.intensity > 0.6 ? 0xf85149 : entry.intensity > 0.3 ? 0xd29922 : 0x58a6ff;
+    g.fillStyle(color, alpha);
+    g.fillCircle(cx, cy, r);
+  });
+  heatOverlay = g;
+}
+
+function clearHeatmap() {
+  if (heatOverlay) { heatOverlay.destroy(); heatOverlay = null; }
+}
+
+async function loadRelWeb() {
+  try {
+    const r = await fetch('/api/relationships');
+    relWebData = await r.json();
+    renderRelWeb();
+  } catch(_) {}
+}
+
+function renderRelWeb() {
+  if (!phaserScene || !relWebOn) return;
+  if (relOverlay) { relOverlay.destroy(); relOverlay = null; }
+  const g = phaserScene.add.graphics();
+
+  relWebData.forEach(rel => {
+    if (rel.familiarity < 0.15) return;
+    const sa = charSprites[rel.from];
+    const sb = charSprites[rel.to];
+    if (!sa || !sb) return;
+
+    const strokeW = Math.max(0.5, rel.familiarity * 3);
+    const alpha = 0.2 + rel.familiarity * 0.5;
+    let color;
+    if (rel.trust > 0.4) color = 0x3fb950;
+    else if (rel.trust < -0.1) color = 0xf85149;
+    else color = 0x484f58;
+
+    g.lineStyle(strokeW, color, alpha);
+    g.lineBetween(sa.x, sa.y, sb.x, sb.y);
+  });
+  relOverlay = g;
+}
+
+function clearRelWeb() {
+  if (relOverlay) { relOverlay.destroy(); relOverlay = null; }
+}
+
+// ── Boot Phaser ───────────────────────────────────────────────────────────────
+
+const config = {
+  type: Phaser.AUTO,
+  width: W,
+  height: H,
+  backgroundColor: '#0c1208',
+  parent: 'game-container',
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  scene: CaldwellScene,
+};
+
+const game = new Phaser.Game(config);
+connectWS();
+</script>
+</body>
+</html>

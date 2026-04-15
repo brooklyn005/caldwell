@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caldwell — Simulation</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c10;
+    --surface: #0d1117;
+    --surface2: #161b22;
+    --border: #21262d;
+    --text: #c9d1d9;
+    --muted: #484f58;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --pink: #f778ba;
+    --teal: #39d353;
+    --font: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Top bar ── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #topbar .title { font-size: 14px; font-weight: 700; color: var(--accent); letter-spacing: 2px; }
+  #topbar .sep { color: var(--muted); }
+  #clock { color: var(--green); font-weight: 600; }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  #status-dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #status-label { color: var(--muted); }
+  #cost-display { margin-left: auto; color: var(--yellow); }
+  #pop-display { color: var(--purple); }
+
+  /* ── Controls ── */
+  #controls {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 12px;
+    font-family: var(--font);
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.active { border-color: var(--green); color: var(--green); }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  .ctrl-sep { color: var(--muted); padding: 0 4px; }
+
+  /* ── Main layout ── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    gap: 0;
+  }
+
+  /* ── Roster panel ── */
+  #roster-panel {
+    width: 320px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 8px;
+  }
+  #roster-panel::-webkit-scrollbar { width: 4px; }
+  #roster-panel::-webkit-scrollbar-track { background: transparent; }
+  #roster-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .section-head {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 4px 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+  }
+
+  .char-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 7px 8px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    transition: border-color 0.1s;
+  }
+  .char-card:hover { border-color: var(--accent); }
+  .char-card.selected { border-color: var(--accent); background: #0d2035; }
+  .char-card.minor { border-left: 2px solid var(--yellow); }
+  .char-card.dead { opacity: 0.35; }
+
+  .char-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .char-id { font-size: 10px; color: var(--muted); min-width: 36px; }
+  .char-name { font-size: 11px; font-weight: 600; flex: 1; }
+  .char-name.female { color: var(--pink); }
+  .char-name.male { color: var(--accent); }
+  .model-badge {
+    font-size: 8px; padding: 1px 4px; border-radius: 2px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .model-badge.haiku { color: #e6904a; border-color: #e6904a44; }
+  .model-badge.deepseek { color: var(--teal); border-color: #39d35344; }
+
+  .char-desc { font-size: 10px; color: var(--muted); line-height: 1.4; }
+  .char-location { font-size: 9px; color: var(--accent); margin-top: 2px; opacity: 0.7; }
+  .disposition {
+    display: inline-block; font-size: 8px; padding: 1px 5px;
+    border-radius: 3px; margin-left: 4px; font-weight: 600; letter-spacing: 0.5px;
+  }
+  .d-despairing  { background:#3d0f0f; color:#f85149; }
+  .d-frustrated  { background:#2d1a00; color:#d29922; }
+  .d-neutral     { background:#1a1f2d; color:#484f58; }
+  .d-content     { background:#0d2d1a; color:#3fb950; }
+  .d-flourishing { background:#0a2040; color:#58a6ff; }
+
+  /* ── Right panel ── */
+  #right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Detail pane ── */
+  #detail-pane {
+    height: 180px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    overflow-y: auto;
+    background: var(--surface2);
+  }
+  #detail-pane h3 { font-size: 12px; color: var(--accent); margin-bottom: 6px; }
+  #detail-content { font-size: 11px; color: var(--text); line-height: 1.6; }
+  #detail-content .label { color: var(--muted); }
+  #detail-content .value { color: var(--text); }
+
+  /* ── Live log ── */
+  #log-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column-reverse;
+  }
+  #log-panel::-webkit-scrollbar { width: 4px; }
+  #log-panel::-webkit-scrollbar-track { background: transparent; }
+  #log-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry {
+    padding: 3px 0;
+    border-bottom: 1px solid #0d1117;
+    line-height: 1.5;
+    font-size: 11px;
+  }
+  .log-entry .ts { color: var(--muted); margin-right: 8px; font-size: 9px; }
+  .log-entry.tick .tag { color: var(--green); }
+  .log-entry.inception .tag { color: var(--purple); }
+  .log-entry.system .tag { color: var(--yellow); }
+  .log-entry.dialogue .tag { color: var(--pink); }
+  .log-entry.error .tag { color: var(--red); }
+
+  /* ── Inception panel ── */
+  #inception-bar {
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  #inception-bar .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #inception-bar label { font-size: 10px; color: var(--muted); }
+  #inception-targets {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    width: 100px;
+  }
+  #inception-thought {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    min-width: 200px;
+  }
+  #inception-targets:focus, #inception-thought:focus {
+    outline: none;
+    border-color: var(--purple);
+  }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <span class="title">◈ CALDWELL</span>
+  <span class="sep">|</span>
+  <span id="clock">Year 0, January 1</span>
+  <span class="sep">|</span>
+  <span id="status-dot"></span>&nbsp;<span id="status-label">PAUSED</span>
+  <span class="sep">|</span>
+  <span id="pop-display">30 alive</span>
+  <span class="sep">|</span>
+  <span id="cost-display">$0.0000 today</span>
+  <span class="sep">|</span>
+  <span style="font-size:9px;color:var(--muted);">MODE:</span> <span id="ai-mode-badge" style="font-size:9px;color:var(--yellow);font-weight:600;">API</span>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <button id="btn-start" onclick="simControl('start')">▶ RUN</button>
+  <button id="btn-stop" onclick="simControl('stop')">■ PAUSE</button>
+  <button onclick="manualTick()">⊳ STEP</button>
+  <input type="range" id="batch-days" min="1" max="30" value="10"
+    oninput="document.getElementById('batch-days-label').textContent=this.value+' days'"
+    style="width:80px;accent-color:#d29922;vertical-align:middle;">
+  <span id="batch-days-label" style="font-size:9px;color:#d29922;min-width:42px;">10 days</span>
+  <button id="btn-batch" onclick="runBatch(parseInt(document.getElementById('batch-days').value))"
+    style="border:1px solid #d29922;color:#d29922;background:transparent;padding:4px 10px;
+           font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;">⏩ RUN</button>
+  <div id="batch-progress" style="display:none;align-items:center;gap:6px;">
+    <span style="background:#1a1a1a;width:80px;height:6px;border-radius:3px;display:inline-block;overflow:hidden;">
+      <span id="batch-bar" style="display:block;background:#d29922;height:100%;width:0%;transition:width 0.3s;"></span>
+    </span>
+    <span id="batch-label" style="font-size:9px;color:#d29922;">0/10</span>
+  </div>
+  <span class="ctrl-sep">|</span>
+  <button onclick="loadRoster()">↺ REFRESH</button>
+  <span class="ctrl-sep">|</span>
+  <a href="/play" target="_blank" style="color:var(--accent);font-size:10px;border:1px solid #21262d;padding:4px 8px;border-radius:3px;text-decoration:none;">🗺 Live Map</a>
+  <a href="/analytics" target="_blank" style="color:var(--purple);font-size:10px;border:1px solid #21262d;padding:4px 8px;border-radius:3px;text-decoration:none;">📊 Analytics</a>
+  <span class="ctrl-sep">|</span>
+  <span style="color:var(--muted);font-size:10px;">View:</span>
+  <button onclick="showView('roster')" id="view-roster" class="active">Roster</button>
+  <button onclick="showView('locations')" id="view-locations">Locations</button>
+  <button onclick="showView('disposition')" id="view-disposition">Disposition</button>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Left: Roster or Locations -->
+  <div id="roster-panel">
+    <div class="section-head">Residents — 30</div>
+    <div id="roster-list"></div>
+  </div>
+
+  <!-- Right -->
+  <div id="right-panel">
+
+    <!-- Detail pane -->
+    <div id="detail-pane">
+      <h3>Select a character</h3>
+      <div id="detail-content" style="color:var(--muted);">
+        Click any resident on the left to see their profile and memories.
+      </div>
+    </div>
+
+    <!-- Live log -->
+    <div id="log-panel">
+      <div class="log-entry system">
+        <span class="ts">--:--:--</span>
+        <span class="tag">[SYSTEM]</span> Caldwell initialized. Awaiting first tick.
+      </div>
+    </div>
+
+    <!-- Injection panel -->
+    <div id="inject-bar" style="border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;">
+      <!-- Tab buttons -->
+      <div style="display:flex;border-bottom:1px solid var(--border);">
+        <button id="tab-inception" onclick="switchTab('inception')"
+          style="flex:1;background:var(--surface2);border:none;border-right:1px solid var(--border);
+                 color:var(--purple);padding:5px;font-family:var(--font);font-size:9px;
+                 letter-spacing:1px;cursor:pointer;">💉 INCEPTION</button>
+        <button id="tab-action" onclick="switchTab('action')"
+          style="flex:1;background:transparent;border:none;color:var(--muted);padding:5px;
+                 font-family:var(--font);font-size:9px;letter-spacing:1px;cursor:pointer;">⚡ ACTION</button>
+        <button id="tab-discover" onclick="switchTab('discover')"
+          style="flex:1;background:transparent;border:none;color:var(--muted);padding:5px;
+                 font-family:var(--font);font-size:9px;letter-spacing:1px;cursor:pointer;">🗺 DISCOVER</button>
+      </div>
+      <!-- Inception panel -->
+      <div id="panel-inception" style="padding:7px 12px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <label style="font-size:9px;color:var(--muted);">TARGETS</label>
+          <input id="inception-targets" placeholder="F-01,M-07"
+            style="width:90px;background:var(--surface2);border:1px solid var(--border);
+                   color:var(--text);font-family:var(--font);font-size:10px;padding:3px 6px;border-radius:3px;">
+          <input id="inception-thought" placeholder="Plant a thought into their mind..."
+            style="flex:1;background:var(--surface2);border:1px solid var(--border);
+                   color:var(--text);font-family:var(--font);font-size:10px;padding:3px 6px;border-radius:3px;">
+          <button onclick="sendInception()"
+            style="border:1px solid var(--purple);color:var(--purple);background:transparent;
+                   padding:4px 10px;font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;">
+            INJECT
+          </button>
+        </div>
+      </div>
+      <!-- Action panel -->
+      <div id="panel-action" style="padding:7px 12px;display:none;">
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <input id="action-participants" placeholder="Participants: F-12,M-10"
+              style="width:150px;background:var(--surface2);border:1px solid var(--border);
+                     color:var(--text);font-family:var(--font);font-size:10px;padding:3px 6px;border-radius:3px;"
+              title="Roster IDs of characters IN the scene">
+            <input id="action-witnesses" placeholder="Witnesses (optional)"
+              style="width:150px;background:var(--surface2);border:1px solid var(--border);
+                     color:var(--muted);font-family:var(--font);font-size:10px;padding:3px 6px;border-radius:3px;"
+              title="Roster IDs of characters who observe">
+            <select id="action-char-picker" onchange="addActionChar(this)"
+              style="width:150px;background:var(--surface2);border:1px solid var(--border);
+                     color:var(--muted);font-family:var(--font);font-size:9px;padding:2px 4px;border-radius:3px;">
+              <option value="">+ Add character...</option>
+            </select>
+            <div style="display:flex;gap:4px;">
+              <button onclick="addAllToAction()"
+                style="flex:1;background:transparent;border:1px solid var(--border);color:var(--muted);
+                       font-family:var(--font);font-size:8px;padding:2px;cursor:pointer;border-radius:3px;">
+                All Participants
+              </button>
+              <button onclick="clearActionFields()"
+                style="flex:1;background:transparent;border:1px solid var(--border);color:var(--muted);
+                       font-family:var(--font);font-size:8px;padding:2px;cursor:pointer;border-radius:3px;">
+                Clear
+              </button>
+            </div>
+          </div>
+          <textarea id="action-scene"
+            placeholder="Describe what happens... e.g. F-12 rounds the corner of the warehouse and finds M-10 relieving himself against the wall. They make eye contact before either can react."
+            style="flex:1;min-width:200px;height:46px;background:var(--surface2);border:1px solid var(--border);
+                   color:var(--text);font-family:var(--font);font-size:10px;padding:4px 6px;
+                   border-radius:3px;resize:vertical;"></textarea>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;">
+            <select id="action-perspective"
+              style="background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+                     font-family:var(--font);font-size:9px;padding:3px 5px;border-radius:3px;">
+              <option value="mutual">Mutual</option>
+              <option value="observer">Observer/Observed</option>
+              <option value="subject">Subject only</option>
+            </select>
+            <button onclick="sendAction()"
+              style="border:1px solid var(--yellow);color:var(--yellow);background:transparent;
+                     padding:4px 10px;font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;">
+              INJECT SCENE
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Discover panel -->
+      <div id="panel-discover" style="padding:7px 12px;display:none;">
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <input id="discover-roster" placeholder="Who found it (F-09)"
+              style="width:130px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:10px;padding:3px 6px;border-radius:3px;">
+            <input id="discover-name" placeholder="Name (optional)"
+              style="width:130px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:var(--font);font-size:10px;padding:3px 6px;border-radius:3px;">
+            <label style="font-size:9px;color:var(--muted);display:flex;align-items:center;gap:4px;">
+              <input type="checkbox" id="discover-outside"> Outside Caldwell
+            </label>
+          </div>
+          <textarea id="discover-desc" placeholder="Describe what was found..."
+            style="flex:1;min-width:200px;height:50px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:10px;padding:4px 6px;border-radius:3px;resize:vertical;"></textarea>
+          <button onclick="sendDiscovery()"
+            style="border:1px solid var(--orange);color:var(--orange);background:transparent;padding:4px 10px;font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;">
+            🗺 CREATE
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let ws = null;
+let rosterData = [];
+let selectedId = null;
+let currentView = 'roster';
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    addLog('system', 'WebSocket connected.');
+    setInterval(() => { if(ws.readyState===1) ws.send('ping'); }, 30000);
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleMessage(msg);
+    } catch(_) {}
+  };
+
+  ws.onclose = () => {
+    addLog('error', 'WebSocket disconnected. Reconnecting in 5s...');
+    setTimeout(connectWS, 5000);
+  };
+}
+
+function handleMessage(msg) {
+  const d = msg.data || {};
+  if (msg.type === 'new_day') {
+    document.getElementById('clock').textContent = d.display || '';
+    addLog('system', `━━ ${d.display} ━━`);
+  } else if (msg.type === 'conversation_start') {
+    const aName = d.char_a_name || d.char_a;
+    const bName = d.char_b_name || d.char_b;
+    addLog('tick', `${aName} ↔ ${bName} @ ${d.location}`);
+  } else if (msg.type === 'dialogue_line') {
+    const name = d.given_name || d.roster_id;
+    const model = d.model === 'haiku' ? 'H' : 'D';
+    addDialogue(d.roster_id, name, d.text, d.model, d.location);
+  } else if (msg.type === 'monologue') {
+    addMonologue(d.roster_id, d.given_name, d.text, d.location);
+  } else if (msg.type === 'conversation_end') {
+    // subtle separator
+  } else if (msg.type === 'tick_complete') {
+    document.getElementById('cost-display').textContent =
+      `$${(d.cost_today||0).toFixed(4)} / $2.80 today`;
+    const modeEl = document.getElementById('ai-mode-badge');
+    if (modeEl) modeEl.textContent = (d.ai_mode||'api').toUpperCase();
+    addLog('system',
+      `Day ${d.sim_day} done — ${d.pair_conversations} pairs, ` +
+      `${d.group_conversations} groups, ${d.idle_characters} monologues, ` +
+      `${d.total_exchanges} exchanges`
+    );
+    loadStatus();
+    if (currentView === 'roster') loadRoster();
+  } else if (msg.type === 'batch_progress') {
+    handleBatchProgress(d);
+  } else if (msg.type === 'batch_complete') {
+    handleBatchComplete(d);
+  } else if (msg.type === 'batch_stopped') {
+    addLog('system', `Batch stopped: ${d.reason} after ${d.days_run} days.`);
+    document.getElementById('batch-progress').style.display = 'none';
+    document.getElementById('btn-batch').disabled = false;
+    document.getElementById('btn-batch').style.opacity = '1';
+  } else if (msg.type === 'tick') {
+    // legacy format
+    if (d.skipped) { addLog('system', `Tick skipped: ${d.reason}`); return; }
+    loadStatus();
+  } else if (msg.type === 'character_action') {
+    addAction(d.roster_id, d.given_name, d.action, d.location);
+  } else if (msg.type === 'environment_event') {
+    const severity = d.severity >= 1.5 ? '🚨' : d.severity >= 1.0 ? '⚠️' : 'ℹ️';
+    addLog('system', severity + ' ' + d.type.toUpperCase().replace('_',' ') + ': ' + d.description.substring(0,120));
+  } else if (msg.type === 'sexual_encounter') {
+    const w = d.witness_count > 0 ? ' (' + d.witness_count + ' witnessed)' : ' (private)';
+    addLog('system', '🔥 ' + (d.name_a || d.character_a) + ' and ' + (d.name_b || d.character_b) + ' at ' + d.location + w);
+  } else if (msg.type === 'conception') {
+    addLog('system', '🔴 Conception occurred between ' + (d.mother_name || d.mother) + ' and ' + (d.father_name || d.father) + ' — birth expected Day ' + d.expected_birth_day);
+  } else if (msg.type === 'birth') {
+    addLog('system', '👶 ' + d.infant_roster_id + ' born to ' + (d.mother_name || d.mother) + ' and ' + (d.father_name || d.father) + ' on Day ' + d.sim_day);
+  } else if (msg.type === 'infant_maturation') {
+    addLog('system', '🌱 ' + d.roster_id + ' has reached speaking age (' + (d.age || '?').toFixed(1) + ' years)');
+  } else if (msg.type === 'character_death') {
+    addLog('system', '💀 ' + (d.given_name || d.roster_id) + ' has died (age ' + (d.age || '?') + ')');
+  } else if (msg.type === 'first_menstruation') {
+    addLog('system', '🔴 ' + (d.given_name || d.roster_id) + ' is experiencing something in their body they don\'t understand (Day ' + d.sim_day + ')');
+  } else if (msg.type === 'location_discovered') {
+    addLog('system', '🗺 NEW LOCATION: ' + d.location + (d.is_outside ? ' [OUTSIDE]' : '') + ' — ' + (d.given_name || d.character));
+  } else if (msg.type === 'action_queued') {
+    addLog('system', `⚡ SCENE queued → [${(d.participants||[]).join(', ')}] Day ${d.inject_on_day}: "${d.scene_preview}"`);
+  } else if (msg.type === 'action_event') {
+    addLog('dialogue', `⚡ SCENE [Day ${d.sim_day}]: ${d.scene}`);
+  } else if (msg.type === 'action_reaction') {
+    const color = d.gender==='F'?'#f778ba':'#58a6ff';
+    const name = d.given_name || d.roster_id;
+    addDialogue(d.roster_id, name, d.reaction, 'haiku', 'reaction');
+  } else if (msg.type === 'inception') {
+    addLog('inception',
+      `💉 INCEPTION → [${(d.targets||[]).join(', ')}] Day ${d.inject_on_day}: "${d.thought_preview}"`
+    );
+  }
+}
+
+// ── Status ─────────────────────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const data = await r.json();
+    const clock = data.clock || {};
+    const cost = data.cost || {};
+    const pop = data.population || {};
+
+    document.getElementById('clock').textContent = clock.display || 'Year 0, January 1';
+    document.getElementById('cost-display').textContent =
+      `$${(cost.spent_usd||0).toFixed(4)} / $${cost.budget_usd||2.80} today`;
+    document.getElementById('pop-display').textContent =
+      `${pop.alive||30} alive`;
+
+    const running = clock.is_running;
+    const dot = document.getElementById('status-dot');
+    const lbl = document.getElementById('status-label');
+    dot.className = 'status-dot' + (running ? ' running' : '');
+    lbl.textContent = running ? 'RUNNING' : 'PAUSED';
+    lbl.style.color = running ? 'var(--green)' : 'var(--muted)';
+
+    document.getElementById('btn-start').className = running ? 'active' : '';
+  } catch(e) {
+    addLog('error', 'Could not reach server.');
+  }
+}
+
+// ── Roster ─────────────────────────────────────────────────────────────────
+async function loadRoster() {
+  try {
+    const [charRes, dispRes] = await Promise.all([
+      fetch('/api/characters'),
+      fetch('/api/dispositions'),
+    ]);
+    rosterData = await charRes.json();
+    const dispositions = await dispRes.json();
+    const dispMap = {};
+    dispositions.forEach(d => dispMap[d.roster_id] = d.state);
+    rosterData = rosterData.map(c => ({...c, disposition: dispMap[c.roster_id] || 'neutral'}));
+    renderRoster(rosterData);
+  } catch(e) {}
+}
+
+function renderRoster(chars) {
+  const list = document.getElementById('roster-list');
+  list.innerHTML = '';
+  chars.forEach(c => {
+    const div = document.createElement('div');
+    div.className = `char-card${c.is_minor?' minor':''}${!c.alive?' dead':''}${selectedId===c.roster_id?' selected':''}`;
+    div.onclick = () => selectChar(c.roster_id);
+    const nameStr = c.given_name ? `${c.given_name} (${c.roster_id})` : c.roster_id;
+    const disp = c.disposition || 'neutral';
+    div.innerHTML = `
+      <div class="char-top">
+        <span class="char-id">${c.roster_id}</span>
+        <span class="char-name ${c.gender==='F'?'female':'male'}">${nameStr}</span>
+        <span class="model-badge ${c.ai_model}">${c.ai_model==='haiku'?'Haiku':'DeepSeek'}</span>
+        <span class="disposition d-${disp}">${disp}</span>
+      </div>
+      <div class="char-desc">${truncate(c.natural_tendency, 72)}</div>
+      <div class="char-location">${c.current_location||'Central Square'} · Age ${c.age}${c.is_minor?' · MINOR':''}</div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+async function selectChar(rosterId) {
+  selectedId = rosterId;
+  document.querySelectorAll('.char-card').forEach(el => el.classList.remove('selected'));
+  document.querySelectorAll('.char-card').forEach(el => {
+    if(el.querySelector('.char-id')?.textContent === rosterId) el.classList.add('selected');
+  });
+
+  try {
+    const r = await fetch(`/api/characters/${rosterId}`);
+    const c = await r.json();
+    renderDetail(c);
+
+    // Pre-fill inception target
+    document.getElementById('inception-targets').value = rosterId;
+  } catch(e) {}
+}
+
+function renderDetail(c) {
+  const nameStr = c.given_name ? `${c.given_name} (${c.roster_id})` : c.roster_id;
+  const traits = (c.personality_traits||[]).join(', ');
+  const memories = (c.memories||[]).slice(0,5);
+  const rels = (c.relationships||[]).slice(0,5);
+
+  let memHTML = memories.length
+    ? memories.map(m =>
+        `<div style="padding:2px 0;border-bottom:1px solid #21262d;">
+           <span style="color:var(--muted)">[Day ${m.day}]</span> ${m.content}
+           ${m.is_inception?'<span style="color:var(--purple)">[INCEPTION]</span>':''}
+         </div>`
+      ).join('')
+    : '<span style="color:var(--muted)">No memories yet.</span>';
+
+  let relHTML = rels.length
+    ? rels.map(r =>
+        `<span style="color:var(--accent)">${r.with_name||r.with}</span>
+         [trust:${r.trust.toFixed(1)} fam:${r.familiarity.toFixed(1)}] `
+      ).join('')
+    : '<span style="color:var(--muted)">No relationships yet.</span>';
+
+  document.getElementById('detail-pane').querySelector('h3').textContent = nameStr;
+  document.getElementById('detail-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-bottom:8px;">
+      <div><span class="label">Age: </span><span class="value">${c.age}${c.is_minor?' (minor)':''}</span></div>
+      <div><span class="label">Drive: </span><span class="value">${c.core_drive}</span></div>
+      <div><span class="label">Model: </span><span class="value" style="color:${c.ai_model==='haiku'?'#e6904a':'var(--teal)'}">${c.ai_model}</span></div>
+      <div><span class="label">Location: </span><span class="value">${c.current_location||'?'}</span></div>
+    </div>
+    <div style="margin-bottom:4px;color:var(--muted);font-size:10px;">TENDENCY</div>
+    <div style="margin-bottom:8px;line-height:1.5;">${c.natural_tendency}</div>
+    <div style="margin-bottom:4px;color:var(--muted);font-size:10px;">APPEARANCE</div>
+    <div style="margin-bottom:8px;line-height:1.5;color:var(--muted);">${c.physical_description}</div>
+    <div style="margin-bottom:4px;color:var(--muted);font-size:10px;">TRAITS</div>
+    <div style="margin-bottom:8px;">${traits}</div>
+    <div style="margin-bottom:4px;color:var(--muted);font-size:10px;">RELATIONSHIPS (${(c.relationships||[]).length})</div>
+    <div style="margin-bottom:8px;line-height:1.8;">${relHTML}</div>
+    <div style="margin-bottom:4px;color:var(--muted);font-size:10px;">RECENT MEMORIES</div>
+    <div>${memHTML}</div>
+  `;
+}
+
+// ── Locations view ─────────────────────────────────────────────────────────
+async function showLocations() {
+  const list = document.getElementById('roster-list');
+  list.innerHTML = '<div class="section-head">City Locations</div>';
+  try {
+    const r = await fetch('/api/locations');
+    const locs = await r.json();
+    locs.forEach(loc => {
+      const div = document.createElement('div');
+      div.className = 'char-card';
+      div.innerHTML = `
+        <div class="char-top">
+          <span class="char-name" style="color:var(--yellow)">${loc.name}</span>
+          <span style="color:var(--muted);font-size:9px;">${loc.location_type}</span>
+        </div>
+        <div class="char-desc">${truncate(loc.description, 90)}</div>
+        <div class="char-location">${loc.occupants.length} present · capacity ${loc.capacity}</div>
+      `;
+      list.appendChild(div);
+    });
+  } catch(e) {}
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+async function simControl(action) {
+  await fetch(`/api/sim/${action}`, {method:'POST'});
+  await loadStatus();
+  addLog('system', `Simulation ${action === 'start' ? 'started' : 'paused'}.`);
+}
+
+async function manualTick() {
+  addLog('system', 'Manual tick triggered...');
+  try {
+    const r = await fetch('/api/sim/tick', {method:'POST'});
+    const data = await r.json();
+    if (!data.skipped) {
+      addLog('tick', `Manual tick complete: ${data.date_display}`);
+    }
+  } catch(e) {
+    addLog('error', 'Tick failed.');
+  }
+}
+
+async function runBatch(days) {
+  const btn = document.getElementById('btn-batch');
+  const progress = document.getElementById('batch-progress');
+  btn.disabled = true;
+  btn.style.opacity = '0.4';
+  progress.style.display = 'flex';
+  document.getElementById('batch-label').textContent = `0/${days}`;
+  document.getElementById('batch-bar').style.width = '0%';
+  addLog('system', `⏩ Starting ${days}-day batch run...`);
+  try {
+    await fetch('/api/sim/run_batch', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({days}),
+    });
+  } catch(e) {
+    addLog('error', 'Batch run failed to start.');
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    progress.style.display = 'none';
+  }
+}
+
+function handleBatchProgress(d) {
+  const pct = Math.round((d.current / d.total) * 100);
+  document.getElementById('batch-bar').style.width = pct + '%';
+  document.getElementById('batch-label').textContent = `${d.current}/${d.total}`;
+  document.getElementById('clock').textContent = d.date || '';
+}
+
+function handleBatchComplete(d) {
+  document.getElementById('batch-progress').style.display = 'none';
+  const btn = document.getElementById('btn-batch');
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  addLog('system', `✓ Batch complete: ${d.days_run} days run. Now at ${d.final_date}. Cost: $${(d.total_cost||0).toFixed(4)}`);
+  loadStatus();
+  if (currentView === 'roster') loadRoster();
+}
+
+function switchTab(tab) {
+  if (tab === 'action') {
+    fetch('/api/characters').then(r => r.json()).then(chars => {
+      const picker = document.getElementById('action-char-picker');
+      if (!picker) return;
+      while (picker.options.length > 1) picker.remove(1);
+      chars.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.roster_id;
+        const name = c.given_name ? c.given_name + ' (' + c.roster_id + ')' : c.roster_id;
+        const gender = c.gender === 'F' ? '♀' : '♂';
+        opt.textContent = gender + ' ' + name + ' age ' + c.age;
+        picker.appendChild(opt);
+      });
+    }).catch(() => {});
+  }
+  // Show/hide panels
+  const panels = ['panel-inception','panel-action','panel-discover'];
+  const active = {'inception':'panel-inception','action':'panel-action','discover':'panel-discover'};
+  panels.forEach(p => {
+    const el = document.getElementById(p);
+    if (el) el.style.display = 'none';
+  });
+  const show = active[tab];
+  if (show) {
+    const el = document.getElementById(show);
+    if (el) el.style.display = 'block';
+  }
+  // Update button styles
+  const tabs = [
+    {id:'tab-inception', activeTab:'inception', color:'var(--purple)'},
+    {id:'tab-action', activeTab:'action', color:'var(--yellow)'},
+    {id:'tab-discover', activeTab:'discover', color:'var(--orange)'},
+  ];
+  tabs.forEach(t => {
+    const btn = document.getElementById(t.id);
+    if (!btn) return;
+    btn.style.background = tab === t.activeTab ? 'var(--surface2)' : 'transparent';
+    btn.style.color = tab === t.activeTab ? t.color : 'var(--muted)';
+  });
+}
+
+function addActionChar(select) {
+  if (!select.value) return;
+  const field = document.getElementById('action-participants');
+  const current = field.value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!current.includes(select.value)) {
+    current.push(select.value);
+    field.value = current.join(', ');
+  }
+  select.value = '';
+}
+
+function addAllToAction() {
+  const allIds = Array.from(
+    document.getElementById('action-char-picker').options
+  ).map(o => o.value).filter(Boolean);
+  document.getElementById('action-participants').value = allIds.join(', ');
+}
+
+function clearActionFields() {
+  document.getElementById('action-participants').value = '';
+  document.getElementById('action-witnesses').value = '';
+  document.getElementById('action-scene').value = '';
+}
+
+async function sendDiscovery() {
+  const roster_id = document.getElementById('discover-roster').value.trim();
+  const desc = document.getElementById('discover-desc').value.trim();
+  const is_outside = document.getElementById('discover-outside').checked;
+  const custom_name = document.getElementById('discover-name').value.trim() || null;
+  if (!roster_id || !desc) { addLog('error', 'Need a roster ID and description.'); return; }
+  try {
+    let url = '/api/discover_location?roster_id=' + encodeURIComponent(roster_id) +
+      '&description=' + encodeURIComponent(desc) + '&is_outside=' + is_outside;
+    if (custom_name) url += '&custom_name=' + encodeURIComponent(custom_name);
+    const r = await fetch(url, { method: 'POST' });
+    const data = await r.json();
+    document.getElementById('discover-desc').value = '';
+    addLog('system', '🗺 LOCATION CREATED: ' + data.location_name);
+  } catch(e) { addLog('error', 'Discovery creation failed.'); }
+}
+
+async function sendAction() {
+  const participants = document.getElementById('action-participants').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const witnesses = document.getElementById('action-witnesses').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const scene = document.getElementById('action-scene').value.trim();
+  const perspective = document.getElementById('action-perspective').value;
+  if (!participants.length || !scene) {
+    addLog('error', 'Action inject needs at least one participant and a scene description.');
+    return;
+  }
+  try {
+    const r = await fetch('/api/action_inject', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        participant_roster_ids: participants,
+        witness_roster_ids: witnesses,
+        scene_description: scene,
+        perspective,
+      }),
+    });
+    const data = await r.json();
+    document.getElementById('action-scene').value = '';
+    addLog('system', `⚡ ACTION queued for [${data.participants.join(', ')}] on Day ${data.inject_on_day}`);
+  } catch(e) {
+    addLog('error', 'Action inject failed.');
+  }
+}
+
+async function sendInception() {
+  const targets = document.getElementById('inception-targets').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const thought = document.getElementById('inception-thought').value.trim();
+  if (!targets.length || !thought) {
+    addLog('error', 'Inception requires at least one target and a thought.');
+    return;
+  }
+  try {
+    const r = await fetch('/api/inception', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({roster_ids: targets, thought}),
+    });
+    const data = await r.json();
+    document.getElementById('inception-thought').value = '';
+    addLog('inception', `Inception queued for ${data.targets.join(', ')} on Day ${data.inject_on_day}`);
+  } catch(e) {
+    addLog('error', 'Inception failed.');
+  }
+}
+
+function showView(view) {
+  currentView = view;
+  document.getElementById('view-roster').className = view==='roster'?'active':'';
+  document.getElementById('view-locations').className = view==='locations'?'active':'';
+  document.getElementById('view-disposition').className = view==='disposition'?'active':'';
+  document.querySelector('#roster-panel .section-head').textContent =
+    view === 'roster' ? 'Residents — 30' :
+    view === 'disposition' ? 'Disposition Dashboard' : 'City Locations';
+
+  if (view === 'roster') loadRoster();
+  else if (view === 'disposition') loadDispositions();
+  else showLocations();
+}
+
+async function loadDispositions() {
+  const list = document.getElementById('roster-list');
+  list.innerHTML = '';
+  try {
+    const r = await fetch('/api/dispositions');
+    const data = await r.json();
+    const DISP_LABEL = {
+      despairing:'🔴 Despairing', frustrated:'🟡 Frustrated',
+      neutral:'⚪ Neutral', content:'🟢 Content', flourishing:'🔵 Flourishing'
+    };
+    const DISP_ORDER = ['despairing','frustrated','neutral','content','flourishing'];
+    const groups = {};
+    DISP_ORDER.forEach(d => groups[d] = []);
+    data.forEach(c => groups[c.state] = (groups[c.state]||[]).concat(c));
+    DISP_ORDER.forEach(state => {
+      if (!groups[state] || groups[state].length === 0) return;
+      const head = document.createElement('div');
+      head.style.cssText = 'font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;padding:6px 4px 3px;border-bottom:1px solid #21262d;margin-bottom:4px;';
+      head.textContent = DISP_LABEL[state] + ' (' + groups[state].length + ')';
+      list.appendChild(head);
+      groups[state].forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'char-card';
+        const name = c.given_name ? c.given_name + ' (' + c.roster_id + ')' : c.roster_id;
+        const avg = c.average >= 0 ? '+' + c.average.toFixed(2) : c.average.toFixed(2);
+        div.innerHTML =
+          '<div class="char-top">' +
+          '<span class="char-id">' + c.roster_id + '</span>' +
+          '<span class="char-name ' + (c.roster_id.startsWith('F')?'female':'male') + '">' + name + '</span>' +
+          '<span class="disposition d-' + state + '">' + avg + '</span>' +
+          '</div>' +
+          '<div class="char-desc">' + c.drive + '</div>';
+        div.onclick = () => selectChar(c.roster_id);
+        list.appendChild(div);
+      });
+    });
+  } catch(e) { list.innerHTML = '<div style="color:var(--muted);padding:8px;">No data yet.</div>'; }
+}
+
+
+// ── Dialogue renderer ──────────────────────────────────────────────────────
+const MODEL_COLOR = { haiku: '#e6904a', deepseek: '#39d353' };
+const CHAR_COLOR = {
+  'F-01':'#f778ba','F-02':'#f778ba','F-03':'#f778ba','F-04':'#f778ba','F-05':'#f778ba',
+  'F-06':'#f778ba','F-07':'#f778ba','F-08':'#f778ba','F-09':'#f778ba','F-10':'#f778ba',
+  'F-11':'#f778ba','F-12':'#f778ba','F-13':'#f778ba','F-14':'#f778ba','F-15':'#f778ba',
+  'F-16':'#f778ba','F-17':'#f778ba','F-18':'#f778ba','F-19':'#f778ba','F-20':'#f778ba',
+  'M-01':'#58a6ff','M-02':'#58a6ff','M-03':'#58a6ff','M-04':'#58a6ff','M-05':'#58a6ff',
+  'M-06':'#58a6ff','M-07':'#58a6ff','M-08':'#58a6ff','M-09':'#58a6ff','M-10':'#58a6ff',
+};
+
+function addDialogue(rosterId, name, text, model, location) {
+  const panel = document.getElementById('log-panel');
+  const div = document.createElement('div');
+  const charColor = CHAR_COLOR[rosterId] || '#58a6ff';
+  const modelColor = MODEL_COLOR[model] || '#888';
+  const modelTag = model === 'haiku' ? '[H]' : '[D]';
+  div.style.cssText = 'padding:4px 0 4px 10px;border-left:2px solid ' + charColor + '55;margin-bottom:3px;';
+  div.innerHTML =
+    '<span style="font-size:11px;font-weight:700;color:' + charColor + '">' + name + '</span>' +
+    '<span style="font-size:9px;color:' + modelColor + ';margin-left:5px;">' + modelTag + '</span>' +
+    '<span style="font-size:9px;color:var(--muted);margin-left:6px;">' + location + '</span><br>' +
+    '<span style="font-size:12px;color:#e6edf3;line-height:1.6;">' + text + '</span>';
+  panel.insertBefore(div, panel.firstChild);
+  while (panel.children.length > 500) panel.removeChild(panel.lastChild);
+}
+
+// ── Action renderer ───────────────────────────────────────────────────────
+function addAction(rosterId, name, text, location) {
+  const panel = document.getElementById('log-panel');
+  const div = document.createElement('div');
+  const charColor = CHAR_COLOR[rosterId] || '#58a6ff';
+  div.style.cssText = 'padding:3px 0 3px 10px;border-left:2px solid ' + charColor + '66;margin-bottom:2px;';
+  div.innerHTML =
+    '<span style="font-size:10px;font-weight:600;color:' + charColor + '">' + (name||rosterId) + '</span>' +
+    '<span style="font-size:9px;color:#3fb950;margin-left:5px;">⚡ acts</span>' +
+    '<span style="font-size:9px;color:var(--muted);margin-left:5px;">' + location + '</span><br>' +
+    '<span style="font-size:11px;color:#adbac7;line-height:1.5;">' + text + '</span>';
+  panel.insertBefore(div, panel.firstChild);
+  while (panel.children.length > 600) panel.removeChild(panel.lastChild);
+}
+
+// ── Monologue renderer ────────────────────────────────────────────────────
+function addMonologue(rosterId, name, text, location) {
+  const panel = document.getElementById('log-panel');
+  const div = document.createElement('div');
+  const charColor = CHAR_COLOR[rosterId] || '#58a6ff';
+  div.style.cssText = 'padding:3px 0 3px 10px;border-left:1px dashed ' + charColor + '33;margin-bottom:2px;opacity:0.65;';
+  div.innerHTML =
+    '<span style="font-size:9px;color:' + charColor + '88;">' + (name||rosterId) + '</span>' +
+    '<span style="font-size:9px;color:var(--muted);margin-left:5px;font-style:italic;">' + location + '</span><br>' +
+    '<span style="font-size:11px;color:#8b949e;font-style:italic;line-height:1.5;">' + text + '</span>';
+  panel.insertBefore(div, panel.firstChild);
+  while (panel.children.length > 600) panel.removeChild(panel.lastChild);
+}
+
+// ── Log ────────────────────────────────────────────────────────────────────
+function addLog(type, text) {
+  const panel = document.getElementById('log-panel');
+  const div = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  const now = new Date();
+  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const tags = {
+    tick:'[TICK]', inception:'[INCEPTION]', system:'[SYS]',
+    dialogue:'[EVENT]', error:'[ERR]'
+  };
+  div.innerHTML = `<span class="ts">${ts}</span><span class="tag">${tags[type]||'[LOG]'}</span> ${text}`;
+  panel.insertBefore(div, panel.firstChild);
+  // Keep log from growing too large
+  while (panel.children.length > 200) panel.removeChild(panel.lastChild);
+}
+
+// ── Util ───────────────────────────────────────────────────────────────────
+function truncate(str, n) {
+  if (!str) return '';
+  return str.length > n ? str.slice(0, n) + '…' : str;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  connectWS();
+  loadStatus();
+  loadRoster();
+  setInterval(loadStatus, 15000);
+});
+</script>
+</body>
+</html>

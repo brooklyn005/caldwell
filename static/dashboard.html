@@ -1,0 +1,2147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caldwell — Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #080c10;
+  --surface: #0d1117;
+  --surface2: #161b22;
+  --border: #21262d;
+  --text: #c9d1d9;
+  --muted: #484f58;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --pink: #f778ba;
+  --orange: #e6904a;
+  --font: 'SF Mono','Fira Code',monospace;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.title { font-size: 13px; font-weight: 700; color: var(--accent); letter-spacing: 3px; }
+.sep { color: var(--muted); }
+#sim-day-badge { color: var(--yellow); font-weight: 600; }
+a { color: var(--accent); text-decoration: none; font-size: 11px; }
+a:hover { text-decoration: underline; }
+button.tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-family: var(--font);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  letter-spacing: 1px;
+}
+button.tab.active { border-color: var(--accent); color: var(--accent); }
+button.tab:hover { border-color: var(--accent); color: var(--accent); }
+#refresh-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-family: var(--font);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+#refresh-btn:hover { border-color: var(--green); color: var(--green); }
+
+/* ── Panels ── */
+#panels {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  overflow: hidden;
+}
+.panel {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.panel-title {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.panel-body {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+.panel-scroll::-webkit-scrollbar { width: 3px; }
+.panel-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Event Journal ── */
+.event-entry {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--surface2);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.event-day {
+  font-size: 9px;
+  color: var(--muted);
+  min-width: 44px;
+  padding-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.event-body { flex: 1; }
+.event-type {
+  display: inline-block;
+  font-size: 8px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-bottom: 2px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.et-first_name      { background: #1a2d4a; color: var(--accent); }
+.et-mystery_question{ background: #2a1a2a; color: var(--purple); }
+.et-governance      { background: #1a2a10; color: var(--green); }
+.et-conflict        { background: #2a1010; color: var(--red); }
+.et-alliance        { background: #1a2810; color: #7ee787; }
+.et-strong_bond     { background: #0d2d1a; color: var(--green); }
+.et-first_meeting   { background: #1a1a1a; color: var(--muted); }
+.et-milestone       { background: #2a2010; color: var(--yellow); }
+.et-inception_effect{ background: #2a1a3a; color: var(--purple); }
+.et-departure     { background: #1a1010; color: #8b949e; }
+.et-action_inject { background: #2a1a10; color: var(--yellow); }
+.et-birth         { background: #0d2a0d; color: var(--green); }
+.et-death         { background: #2a0d0d; color: var(--red); }
+.event-desc { font-size: 11px; color: var(--text); line-height: 1.5; }
+.event-chars { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+/* ── Relationship Web (SVG) ── */
+#rel-svg { width: 100%; height: 100%; }
+.rel-filter { padding: 6px 10px; display: flex; gap: 8px; align-items: center; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.rel-filter label { font-size: 9px; color: var(--muted); }
+.rel-filter input { accent-color: var(--accent); }
+
+/* ── Arc Charts ── */
+#arc-panel { grid-column: 2; grid-row: 2; }
+.arc-controls { padding: 6px 10px; display: flex; gap: 8px; align-items: center; flex-shrink: 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.arc-controls label { font-size: 9px; color: var(--muted); }
+.drive-filter { font-size: 10px; padding: 2px 6px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 3px; font-family: var(--font); }
+#arc-chart-wrap { flex: 1; padding: 10px; position: relative; }
+
+/* ── Timeline Scrubber ── */
+#scrubber-panel { grid-column: 1; grid-row: 2; }
+.scrubber-controls {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.scrubber-controls input[type=range] {
+  width: 100%;
+  margin: 4px 0;
+  accent-color: var(--accent);
+}
+.scrubber-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.replay-line {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--surface2);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.replay-speaker { font-weight: 600; margin-right: 5px; }
+.replay-location-badge {
+  font-size: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: var(--muted);
+  margin-right: 5px;
+}
+.replay-group-header {
+  font-size: 9px;
+  color: var(--muted);
+  padding: 5px 0 2px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
+}
+
+/* ── Legend ── */
+.legend-row { display: flex; gap: 16px; padding: 5px 10px; border-top: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+.leg { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--muted); }
+.leg-dot { width: 8px; height: 8px; border-radius: 50%; }
+.leg-line { width: 20px; height: 2px; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="title">◈ CALDWELL</span>
+  <span class="sep">|</span>
+  <span>ANALYTICS</span>
+  <span class="sep">|</span>
+  <span id="sim-day-badge">Day —</span>
+  <span class="sep">|</span>
+  <a href="/">← Log</a>
+  <span class="sep">|</span>
+  <a href="/play">🗺 Map</a>
+  <span class="sep">|</span>
+  <a href="#" onclick="loadBiology()" style="color:var(--green)">🧬 Biology</a>
+  <button class="tab active" id="tab-main" onclick="switchDashTab('main')">Overview</button>
+  <button class="tab" id="tab-power" onclick="switchDashTab('power')">⚡ Power</button>
+  <button class="tab" id="tab-ideology" onclick="switchDashTab('ideology')">🌊 Ideology</button>
+  <button class="tab" id="tab-impact" onclick="switchDashTab('impact')">💉 Impact</button>
+  <button class="tab" id="tab-drives" onclick="switchDashTab('drives')">📊 Drives</button>
+  <button class="tab" id="tab-trajectory" onclick="switchDashTab('trajectory')">📈 Trajectory</button>
+  <button class="tab" id="tab-naming" onclick="switchDashTab('naming')">🎭 Cast</button>
+  <button class="tab" id="tab-biology" onclick="switchDashTab('biology')">🧬 Biology</button>
+  <button class="tab" id="tab-scenes" onclick="switchDashTab('scenes')">📊 Scenes</button>
+  <button class="tab" id="tab-questions" onclick="switchDashTab('questions')">❓ Questions</button>
+  <button class="tab" id="tab-transcripts" onclick="switchDashTab('transcripts')">📜 Transcripts</button>
+  <button class="tab" id="tab-themes" onclick="switchDashTab('themes')">🔍 Themes</button>
+  <button id="refresh-btn" onclick="loadAll()">↺ Refresh</button>
+</div>
+
+<div id="dash-tab-main" class="dash-tab">
+<div id="panels">
+
+  <!-- Top-left: Event Journal -->
+  <div class="panel" id="journal-panel">
+    <div class="panel-head">
+      <span class="panel-title">Event Journal</span>
+      <span id="event-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+    </div>
+    <div class="panel-scroll" id="event-list">
+      <div style="color:var(--muted);padding:12px;font-size:10px;">Loading events...</div>
+    </div>
+  </div>
+
+  <!-- Top-right: Relationship Web / Scene Feed -->
+  <div class="panel" id="rel-panel" style="grid-column:2;grid-row:1;">
+    <div class="panel-head">
+      <span class="panel-title" id="top-right-title">Relationship Web</span>
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        <button class="tab active" id="btn-relweb" onclick="showTopRight('relweb')" style="font-size:9px;padding:2px 7px;">Web</button>
+        <button class="tab" id="btn-scenefeed" onclick="showTopRight('scenefeed')" style="font-size:9px;padding:2px 7px;">Scenes</button>
+      </div>
+    </div>
+    <div class="rel-filter">
+      <label>Min familiarity</label>
+      <input type="range" id="fam-threshold" min="0" max="100" value="10" style="width:100px">
+      <span id="fam-val" style="font-size:9px;color:var(--accent)">0.10</span>
+      <span style="margin-left:auto;font-size:9px;color:var(--muted);">
+        <span style="color:var(--green)">━</span> trust &nbsp;
+        <span style="color:var(--red)">━</span> tension &nbsp;
+        <span style="color:var(--muted)">━</span> neutral
+      </span>
+    </div>
+    <div class="panel-body" id="relweb-view">
+      <svg id="rel-svg" viewBox="0 0 700 400"></svg>
+    </div>
+    <div class="panel-scroll" id="scenefeed-view" style="display:none;">
+      <div style="color:var(--muted);padding:12px;font-size:10px;" id="scenefeed-content">Loading scenes...</div>
+    </div>
+  </div>
+
+  <!-- Bottom-left: Timeline Scrubber -->
+  <div class="panel" id="scrubber-panel">
+    <div class="panel-head">
+      <span class="panel-title">Timeline Scrubber</span>
+      <span id="scrub-day-label" style="font-size:9px;color:var(--yellow);margin-left:auto;">Day 1</span>
+    </div>
+    <div class="scrubber-controls">
+      <div class="scrubber-label">
+        <span id="scrub-min">Day 1</span>
+        <span id="scrub-max">Day 1</span>
+      </div>
+      <input type="range" id="day-scrubber" min="1" max="1" value="1"
+             oninput="scrubberChanged(this.value)">
+    </div>
+    <div class="panel-scroll" id="replay-list">
+      <div style="color:var(--muted);padding:12px;font-size:10px;">Move the slider to replay a day.</div>
+    </div>
+  </div>
+
+  <!-- Bottom-right: Character Arc Charts -->
+  <div class="panel" id="arc-panel">
+    <div class="panel-head">
+      <span class="panel-title">Character Arcs — Satisfaction Over Time</span>
+    </div>
+    <div class="arc-controls">
+      <label>Filter by drive:</label>
+      <select class="drive-filter" id="drive-filter" onchange="renderArcs()">
+        <option value="">All drives</option>
+        <option value="Connection">Connection</option>
+        <option value="Power">Power</option>
+        <option value="Knowledge">Knowledge</option>
+        <option value="Order">Order</option>
+        <option value="Curiosity">Curiosity</option>
+        <option value="Comfort">Comfort</option>
+        <option value="Survival">Survival</option>
+      </select>
+      <label style="margin-left:8px;">Gender:</label>
+      <select class="drive-filter" id="gender-filter" onchange="renderArcs()">
+        <option value="">All</option>
+        <option value="F">Female</option>
+        <option value="M">Male</option>
+      </select>
+      <span id="arc-char-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+    </div>
+    <div id="arc-chart-wrap">
+      <canvas id="arc-chart" role="img" aria-label="Character satisfaction arcs over simulated time"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Data stores ────────────────────────────────────────────────────────────────
+let arcData = [];
+let relData = [];
+let arcChart = null;
+let scrubMin = 1, scrubMax = 1;
+
+const GENDER_CSS = { F: '#f778ba', M: '#58a6ff' };
+const DRIVE_CSS = {
+  Connection: '#f778ba', Power: '#f85149', Knowledge: '#bc8cff',
+  Order: '#58a6ff', Curiosity: '#d29922', Comfort: '#3fb950', Survival: '#e6904a',
+};
+const EVENT_ICONS = {
+  first_name: '📛', mystery_question: '❓', governance: '⚖️',
+  conflict: '⚡', alliance: '🤝', strong_bond: '💛',
+  first_meeting: '👋', milestone: '📅', inception_effect: '💉',
+  departure: '🚪', action_inject: '⚡', birth: '👶', death: '💀',
+};
+
+// ── Load all data ──────────────────────────────────────────────────────────────
+async function loadBiology() {
+  try {
+    const r = await fetch('/api/biology');
+    const data = await r.json();
+    // Show biology as a quick overlay in the event journal panel
+    const list = document.getElementById('event-list');
+    const HORMONAL_COLORS = {
+      baseline:'#484f58', restless:'#d29922', heightened:'#bc8cff',
+      depleted:'#58a6ff', aggressive:'#f85149', calm:'#3fb950', 'n/a':'#21262d'
+    };
+    list.innerHTML = `<div style="font-size:9px;color:var(--muted);letter-spacing:2px;padding:4px 0 8px;border-bottom:1px solid var(--border);margin-bottom:6px;">BIOLOGICAL STATE — ALL CHARACTERS</div>` +
+      data.map(c => {
+        const hColor = HORMONAL_COLORS[c.hormonal_state] || '#484f58';
+        const hungerBar = Math.round((c.hunger / 10) * 60);
+        const fatBar = Math.round((c.fatigue / 10) * 60);
+        const bathBar = Math.round((c.bathroom_urgency / 10) * 60);
+        return `<div style="padding:5px 0;border-bottom:1px solid #0d1117;display:grid;grid-template-columns:80px 1fr 70px;gap:6px;align-items:center;">
+          <span style="font-size:10px;color:${c.gender==='F'?'#f778ba':'#58a6ff'};font-weight:600;">${c.given_name||c.roster_id}</span>
+          <div style="font-size:9px;color:var(--muted);">
+            <span style="margin-right:6px;">🍖 ${c.hunger.toFixed(1)}</span>
+            <span style="margin-right:6px;">💤 ${c.fatigue.toFixed(1)}</span>
+            <span>🚽 ${c.bathroom_urgency.toFixed(1)}</span>
+          </div>
+          <span style="font-size:8px;padding:1px 5px;border-radius:2px;background:${hColor}22;color:${hColor};text-align:center;">${c.hormonal_state}</span>
+        </div>`;
+      }).join('');
+    document.getElementById('event-count').textContent = `${data.length} chars`;
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+async function loadAll() {
+  sceneFeedLoaded = false;  // force reload on refresh
+  await Promise.all([
+    loadStatus(),
+    loadEvents(),
+    loadRelationships(),
+    loadArcs(),
+    loadScrubberRange(),
+  ]);
+  // Reload scene feed if visible
+  if (document.getElementById('scenefeed-view') && 
+      document.getElementById('scenefeed-view').style.display !== 'none') {
+    loadSceneFeed();
+  }
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    const day = d.clock?.total_days || '—';
+    document.getElementById('sim-day-badge').textContent = `Day ${day}`;
+  } catch(_) {}
+}
+
+// ── Event Journal ──────────────────────────────────────────────────────────────
+async function loadEvents() {
+  try {
+    const r = await fetch('/api/events/significant?limit=200');
+    const events = await r.json();
+    const list = document.getElementById('event-list');
+    document.getElementById('event-count').textContent = `${events.length} events`;
+
+    if (!events.length) {
+      list.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No significant events yet. Run more ticks.</div>';
+      return;
+    }
+
+    list.innerHTML = events.map(ev => {
+      const icon = EVENT_ICONS[ev.event_type] || '•';
+      const chars = ev.characters.length ? ev.characters.join(', ') : '';
+      return `
+        <div class="event-entry">
+          <div class="event-day">Day ${ev.sim_day}</div>
+          <div class="event-body">
+            <div>
+              <span class="event-type et-${ev.event_type}">${icon} ${ev.event_type.replace(/_/g,' ')}</span>
+            </div>
+            <div class="event-desc">${ev.description}</div>
+            ${chars ? `<div class="event-chars">${chars}${ev.location ? ' · ' + ev.location : ''}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('event-list').innerHTML =
+      '<div style="color:var(--muted);padding:12px;">Could not load events.</div>';
+  }
+}
+
+// ── Relationship Web ───────────────────────────────────────────────────────────
+async function loadRelationships() {
+  try {
+    const r = await fetch('/api/relationships');
+    relData = await r.json();
+    renderRelWeb();
+  } catch(_) {}
+}
+
+function renderRelWeb() {
+  const svg = document.getElementById('rel-svg');
+  const threshold = parseInt(document.getElementById('fam-threshold').value) / 100;
+  document.getElementById('fam-val').textContent = threshold.toFixed(2);
+
+  const W = svg.clientWidth || 700;
+  const H = svg.clientHeight || 400;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  // Collect unique characters in this web
+  const charSet = new Set();
+  relData.forEach(r => {
+    if (r.familiarity >= threshold) {
+      charSet.add(r.from);
+      charSet.add(r.to);
+    }
+  });
+  const chars = Array.from(charSet);
+
+  // Position in a circle
+  const cx = W / 2, cy = H / 2;
+  const radius = Math.min(cx, cy) - 50;
+  const positions = {};
+  chars.forEach((id, i) => {
+    const angle = (i / chars.length) * Math.PI * 2 - Math.PI / 2;
+    positions[id] = {
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
+    };
+  });
+
+  let html = '';
+
+  // Draw edges
+  relData.forEach(r => {
+    if (r.familiarity < threshold) return;
+    const a = positions[r.from];
+    const b = positions[r.to];
+    if (!a || !b) return;
+
+    const strokeW = Math.max(0.5, r.familiarity * 4);
+    const opacity = 0.3 + r.familiarity * 0.5;
+    let color = '#484f58';
+    if (r.trust > 0.3) color = '#3fb950';
+    else if (r.trust < -0.1) color = '#f85149';
+
+    html += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}"
+               x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"
+               stroke="${color}" stroke-width="${strokeW.toFixed(1)}"
+               opacity="${opacity.toFixed(2)}"/>`;
+  });
+
+  // Draw nodes
+  chars.forEach(id => {
+    const pos = positions[id];
+    if (!pos) return;
+    const isF = id.startsWith('F');
+    const color = isF ? '#f778ba' : '#58a6ff';
+    // Find given name
+    const rel = relData.find(r => r.from === id || r.to === id);
+    const label = (id.startsWith('F') ? rel?.from === id ? rel.from_name : rel?.to_name : rel?.from === id ? rel?.from_name : rel?.to_name) || id;
+    const shortLabel = label.length > 6 ? label.substring(0, 5) + '…' : label;
+
+    html += `<circle cx="${pos.x.toFixed(1)}" cy="${pos.y.toFixed(1)}"
+               r="7" fill="${color}" opacity="0.9"/>
+             <text x="${pos.x.toFixed(1)}" y="${(pos.y + 18).toFixed(1)}"
+               text-anchor="middle" font-size="8"
+               fill="#6e7681" font-family="SF Mono, monospace">${shortLabel}</text>`;
+  });
+
+  if (!chars.length) {
+    html = `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="11" fill="#484f58" font-family="SF Mono, monospace">
+      No relationships above threshold yet. Run more ticks.
+    </text>`;
+  }
+
+  svg.innerHTML = html;
+}
+
+document.getElementById('fam-threshold').addEventListener('input', renderRelWeb);
+
+// ── Character Arcs ─────────────────────────────────────────────────────────────
+async function loadArcs() {
+  try {
+    const r = await fetch('/api/character_arcs');
+    arcData = await r.json();
+    renderArcs();
+  } catch(_) {}
+}
+
+function renderArcs() {
+  const driveFilter = document.getElementById('drive-filter').value;
+  const genderFilter = document.getElementById('gender-filter').value;
+
+  let filtered = arcData.filter(c => {
+    if (driveFilter && c.core_drive !== driveFilter) return false;
+    if (genderFilter && c.gender !== genderFilter) return false;
+    if (!c.history || c.history.length === 0) return false;
+    return true;
+  });
+
+  document.getElementById('arc-char-count').textContent =
+    `${filtered.length} characters`;
+
+  // Build unified day axis
+  const allDays = new Set();
+  filtered.forEach(c => c.history.forEach(h => allDays.add(h.day)));
+  const days = Array.from(allDays).sort((a,b) => a-b);
+
+  const datasets = filtered.map(c => {
+    const scoreMap = {};
+    c.history.forEach(h => scoreMap[h.day] = h.score);
+    const data = days.map(d => scoreMap[d] ?? null);
+    const label = c.given_name || c.roster_id;
+    const color = DRIVE_CSS[c.core_drive] || '#58a6ff';
+    return {
+      label,
+      data,
+      borderColor: color,
+      backgroundColor: color + '18',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.4,
+      fill: false,
+      spanGaps: true,
+    };
+  });
+
+  const ctx = document.getElementById('arc-chart').getContext('2d');
+  if (arcChart) arcChart.destroy();
+
+  if (!datasets.length) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = '#484f58';
+    ctx.font = '11px SF Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No data yet — run more ticks', ctx.canvas.width/2, ctx.canvas.height/2);
+    return;
+  }
+
+  arcChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: days, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#21262d',
+          borderWidth: 1,
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e',
+          titleFont: { family: 'SF Mono, monospace', size: 10 },
+          bodyFont: { family: 'SF Mono, monospace', size: 10 },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#484f58', font: { family: 'SF Mono, monospace', size: 9 }, maxTicksLimit: 15 },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Simulated Day', color: '#484f58', font: { size: 9, family: 'SF Mono, monospace' } },
+        },
+        y: {
+          min: -1, max: 1,
+          ticks: { color: '#484f58', font: { family: 'SF Mono, monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Satisfaction', color: '#484f58', font: { size: 9, family: 'SF Mono, monospace' } },
+        },
+      },
+    },
+  });
+}
+
+// ── Timeline Scrubber ──────────────────────────────────────────────────────────
+async function loadScrubberRange() {
+  try {
+    const r = await fetch('/api/sim/days');
+    const d = await r.json();
+    scrubMin = d.min_day;
+    scrubMax = d.max_day;
+    const slider = document.getElementById('day-scrubber');
+    slider.min = scrubMin;
+    slider.max = scrubMax;
+    slider.value = scrubMax;
+    document.getElementById('scrub-min').textContent = `Day ${scrubMin}`;
+    document.getElementById('scrub-max').textContent = `Day ${scrubMax}`;
+    document.getElementById('scrub-day-label').textContent = `Day ${scrubMax}`;
+    if (scrubMax >= scrubMin) scrubberChanged(scrubMax);
+  } catch(_) {}
+}
+
+let scrubDebounce = null;
+function scrubberChanged(day) {
+  document.getElementById('scrub-day-label').textContent = `Day ${day}`;
+  clearTimeout(scrubDebounce);
+  scrubDebounce = setTimeout(() => loadReplay(day), 300);
+}
+
+async function loadReplay(day) {
+  const list = document.getElementById('replay-list');
+  list.innerHTML = '<div style="color:var(--muted);padding:8px;font-size:10px;">Loading...</div>';
+  try {
+    const r = await fetch(`/api/replay/${day}`);
+    const dialogues = await r.json();
+    if (!dialogues.length) {
+      list.innerHTML = `<div style="color:var(--muted);padding:8px;font-size:10px;">No conversations on Day ${day}.</div>`;
+      return;
+    }
+    let html = '';
+    const SCENE_TYPE_COLORS = {
+      preparation: '#d29922', return: '#3fb950', distribution: '#58a6ff',
+      argument: '#f85149', correction: '#bc8cff', resentment: '#e6904a',
+      quiet_intimacy: '#f778ba', gossip: '#6e7681', teaching: '#79c0ff',
+      status_challenge: '#ff6b35', ritual: '#c084fc',
+    };
+    dialogues.forEach(d => {
+      const pnames = d.participants.map(p => p.given_name || p.roster_id).join(', ');
+      const isGroup = d.participants.length > 2;
+      const stColor = d.scene_type ? (SCENE_TYPE_COLORS[d.scene_type] || '#484f58') : '#484f58';
+      const stBadge = d.scene_type
+        ? `<span style="font-size:8px;padding:1px 5px;border-radius:2px;background:${stColor}22;color:${stColor};margin-right:5px;">${d.scene_type.replace(/_/g,' ')}</span>`
+        : '';
+      const ptBadge = d.pressure_type
+        ? `<span style="font-size:8px;color:var(--muted);margin-right:5px;">${d.pressure_type.replace(/_/g,' ')}</span>`
+        : '';
+      html += `<div class="replay-group-header">
+        ${stBadge}${ptBadge}
+        <span class="replay-location-badge">${d.location}</span>
+        ${isGroup ? '👥 ' : ''}${pnames}
+      </div>`;
+      d.exchanges.forEach(ex => {
+        if (ex.roster_id === 'OPERATOR') {
+          html += `<div class="replay-line" style="color:var(--yellow);font-style:italic;">${ex.text}</div>`;
+          return;
+        }
+        const char = d.participants.find(p => p.roster_id === ex.roster_id);
+        const color = char ? GENDER_CSS[char.gender] || '#58a6ff' : '#58a6ff';
+        const name = ex.given_name || ex.roster_id;
+        html += `<div class="replay-line">
+          <span class="replay-speaker" style="color:${color}">${name}</span>${ex.text}
+        </div>`;
+      });
+    });
+    list.innerHTML = html;
+  } catch(e) {
+    list.innerHTML = '<div style="color:var(--muted);padding:8px;">Could not load replay.</div>';
+  }
+}
+
+// ── Auto-refresh every 30s ─────────────────────────────────────────────────────
+var _charCache = null;
+var _transcriptCharsLoaded = false;
+window.addEventListener('DOMContentLoaded', () => {
+  loadAll();
+  setInterval(loadAll, 30000);
+  // Preload character list so transcript/theme tabs are ready immediately
+  setTimeout(function() {
+    if (typeof loadTranscriptChars === 'function') loadTranscriptChars();
+  }, 2000);
+});
+</script>
+</div><!-- end panels --></div><!-- end dash-tab-main -->
+
+<!-- ── Power / Centrality Tab ── -->
+<div id="dash-tab-power" class="dash-tab" style="display:none;flex:1;overflow:hidden;display:none;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:340px 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+
+    <!-- Left: Ranked list -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Centrality Ranking</span><span id="power-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span></div>
+      <div class="panel-scroll" id="power-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Right: SVG network -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Social Network — sized by centrality</span></div>
+      <div style="flex:1;position:relative;">
+        <svg id="power-svg" style="width:100%;height:100%;"></svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Ideology Drift Tab ── -->
+<div id="dash-tab-ideology" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:flex;flex-direction:column;height:100%;background:var(--bg);">
+    <div class="panel-head">
+      <span class="panel-title">Ideological Drift — concept frequency per 1000 words over time</span>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;" id="ideology-legend"></div>
+    </div>
+    <div style="flex:1;padding:12px;position:relative;">
+      <canvas id="ideology-chart" style="width:100%;height:100%;"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Injection Impact Tab ── -->
+<div id="dash-tab-impact" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-rows:1fr;flex:1;overflow:hidden;background:var(--bg);">
+    <div style="display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Injection Impact Tracker</span>
+        <span id="impact-summary" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="impact-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.dash-tab { display:none; flex:1; overflow:hidden; }
+.dash-tab.active { display:flex; flex-direction:column; }
+#dash-tab-main { display:flex; }
+#panels { display:grid; grid-template-columns:320px 1fr; grid-template-rows:1fr 1fr; gap:1px; background:var(--border); overflow:hidden; flex:1; }
+</style>
+
+<script>
+// ── Dashboard tab switching ────────────────────────────────────────────────
+function switchDashTab(tab) {
+  document.querySelectorAll('.dash-tab').forEach(el => {
+    el.style.display = 'none';
+    el.classList.remove('active');
+  });
+  document.querySelectorAll('button.tab').forEach(b => b.classList.remove('active'));
+
+  const el = document.getElementById('dash-tab-' + tab);
+  if (el) { el.style.display = 'flex'; el.classList.add('active'); }
+  const btn = document.getElementById('tab-' + tab);
+  if (btn) btn.classList.add('active');
+
+  if (tab === 'power' && !powerLoaded) loadPowerMap();
+  if (tab === 'ideology' && !ideologyLoaded) loadIdeologyDrift();
+  if (tab === 'impact' && !impactLoaded) loadInjectionImpact();
+  if (tab === 'drives' && !drivesLoaded) loadDriveOutcomes();
+  if (tab === 'trajectory' && !trajectoryLoaded) loadTrajectory();
+  if (tab === 'naming' && !namingLoaded) loadNamingSociology();
+  if (tab === 'biology' && !biologyLoaded) loadBiologyAnalytics();
+  if (tab === 'scenes' && !scenesLoaded) loadSceneCategories();
+  if (tab === 'questions' && !questionsLoaded) loadOpenQuestions();
+  if (tab === 'transcripts' || tab === 'themes') loadTranscriptChars();
+}
+
+// ── Power / Centrality Map ─────────────────────────────────────────────────
+let powerLoaded = false;
+let powerData = [];
+let ideologyLoaded = false;
+let impactLoaded = false;
+let ideologyChart = null;
+
+const DRIVE_COLOR = {
+  // Original 7
+  Connection:'#f778ba', Power:'#f85149', Knowledge:'#bc8cff',
+  Order:'#58a6ff', Curiosity:'#d29922', Comfort:'#3fb950', Survival:'#e6904a',
+  // New drives
+  Dominance:'#ff6b35', Belonging:'#4ecdc4', Envy:'#95e04b',
+  Purity:'#e8d5b7', Status:'#ffd700', Tribalism:'#c084fc',
+  Meaning:'#fb923c', Grief:'#94a3b8',
+};
+
+async function loadPowerMap() {
+  try {
+    const r = await fetch('/api/power_map');
+    powerData = await r.json();
+    powerLoaded = true;
+    renderPowerList();
+    renderPowerNetwork();
+  } catch(e) { console.error(e); }
+}
+
+function renderPowerList() {
+  const list = document.getElementById('power-list');
+  document.getElementById('power-count').textContent = powerData.length + ' characters';
+  list.innerHTML = powerData.map((c, i) => {
+    const color = DRIVE_COLOR[c.core_drive] || '#58a6ff';
+    const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+    const bar = Math.round(c.centrality_normalized * 120);
+    const topConn = c.top_connections.slice(0,3).map(tc =>
+      `<span style="font-size:8px;color:var(--muted);margin-right:4px;">
+        ${tc.given_name || tc.roster_id} <span style="color:var(--green)">${(tc.familiarity*100).toFixed(0)}%</span>
+      </span>`
+    ).join('');
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--surface2);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+        <span style="font-size:10px;color:var(--muted);min-width:16px;">${i+1}</span>
+        <span style="font-size:11px;font-weight:600;color:${gColor};">${c.given_name || c.roster_id}</span>
+        <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${color}22;color:${color};">${c.core_drive}</span>
+        <span style="font-size:9px;color:var(--muted);margin-left:auto;">${c.connection_count} connections</span>
+      </div>
+      <div style="background:var(--surface2);height:4px;border-radius:2px;margin:2px 0 4px 22px;">
+        <div style="width:${bar}px;max-width:100%;height:100%;background:${color};border-radius:2px;"></div>
+      </div>
+      <div style="margin-left:22px;">${topConn}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderPowerNetwork() {
+  const svg = document.getElementById('power-svg');
+  const W = svg.clientWidth || 700;
+  const H = svg.clientHeight || 500;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  if (!powerData.length) { svg.innerHTML = ''; return; }
+
+  const cx = W/2, cy = H/2;
+  const radius = Math.min(cx, cy) - 60;
+
+  // Position by centrality — more central = closer to center
+  const positions = {};
+  powerData.forEach((c, i) => {
+    const angle = (i / powerData.length) * Math.PI * 2 - Math.PI/2;
+    const dist = radius * (1 - c.centrality_normalized * 0.5);
+    positions[c.roster_id] = {
+      x: cx + Math.cos(angle) * dist,
+      y: cy + Math.sin(angle) * dist,
+      centrality: c.centrality_normalized,
+    };
+  });
+
+  // Build lookup
+  const charMap = {};
+  powerData.forEach(c => charMap[c.roster_id] = c);
+
+  let html = '';
+
+  // Draw edges for top connections
+  powerData.forEach(c => {
+    const posA = positions[c.roster_id];
+    c.top_connections.slice(0,3).forEach(conn => {
+      const posB = positions[conn.roster_id];
+      if (!posA || !posB) return;
+      const alpha = 0.15 + conn.familiarity * 0.35;
+      const w = 0.5 + conn.familiarity * 2;
+      html += `<line x1="${posA.x.toFixed(1)}" y1="${posA.y.toFixed(1)}"
+        x2="${posB.x.toFixed(1)}" y2="${posB.y.toFixed(1)}"
+        stroke="${conn.trust > 0.3 ? '#3fb950' : conn.trust < -0.1 ? '#f85149' : '#484f58'}"
+        stroke-width="${w.toFixed(1)}" opacity="${alpha.toFixed(2)}"/>`;
+    });
+  });
+
+  // Draw nodes — size by centrality
+  powerData.forEach(c => {
+    const pos = positions[c.roster_id];
+    if (!pos) return;
+    const r = 5 + c.centrality_normalized * 18;
+    const color = DRIVE_COLOR[c.core_drive] || '#58a6ff';
+    const label = c.given_name || c.roster_id;
+    html += `<circle cx="${pos.x.toFixed(1)}" cy="${pos.y.toFixed(1)}"
+      r="${r.toFixed(1)}" fill="${color}" opacity="0.85"/>
+    <text x="${pos.x.toFixed(1)}" y="${(pos.y + r + 10).toFixed(1)}"
+      text-anchor="middle" font-size="8" fill="#6e7681"
+      font-family="SF Mono,monospace">${label.substring(0,7)}</text>`;
+  });
+
+  svg.innerHTML = html;
+}
+
+// ── Ideology Drift ─────────────────────────────────────────────────────────
+const CONCEPT_COLORS = [
+  '#58a6ff','#f778ba','#3fb950','#d29922',
+  '#bc8cff','#f85149','#e6904a','#79c0ff',
+];
+
+async function loadIdeologyDrift() {
+  try {
+    const r = await fetch('/api/ideology_drift');
+    const data = await r.json();
+    ideologyLoaded = true;
+    renderIdeologyChart(data);
+  } catch(e) { console.error(e); }
+}
+
+function renderIdeologyChart(data) {
+  if (!data.series || !data.series.length) return;
+
+  const legend = document.getElementById('ideology-legend');
+  legend.innerHTML = data.series.map((s, i) => {
+    const color = CONCEPT_COLORS[i % CONCEPT_COLORS.length];
+    return `<span style="font-size:8px;display:flex;align-items:center;gap:3px;">
+      <span style="width:10px;height:2px;background:${color};display:inline-block;"></span>
+      ${s.concept}
+    </span>`;
+  }).join('');
+
+  const ctx = document.getElementById('ideology-chart').getContext('2d');
+  if (ideologyChart) ideologyChart.destroy();
+
+  const datasets = data.series.map((s, i) => ({
+    label: s.concept,
+    data: s.data.map(d => ({ x: d.day, y: d.freq })),
+    borderColor: CONCEPT_COLORS[i % CONCEPT_COLORS.length],
+    backgroundColor: CONCEPT_COLORS[i % CONCEPT_COLORS.length] + '15',
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.4,
+    fill: false,
+    spanGaps: true,
+  }));
+
+  ideologyChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#21262d',
+          borderWidth: 1,
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e',
+          titleFont: { family: 'SF Mono,monospace', size: 10 },
+          bodyFont: { family: 'SF Mono,monospace', size: 9 },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Simulated Day', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+        },
+        y: {
+          ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Freq per 1000 words', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+        },
+      },
+    },
+  });
+}
+
+// ── Injection Impact ───────────────────────────────────────────────────────
+async function loadInjectionImpact() {
+  try {
+    const r = await fetch('/api/injection_impact');
+    const data = await r.json();
+    impactLoaded = true;
+    renderImpactList(data);
+  } catch(e) { console.error(e); }
+}
+
+function renderImpactList(data) {
+  const list = document.getElementById('impact-list');
+  const positive = data.filter(d => d.impact === 'positive' || d.overall_impact === 'positive').length;
+  const negative = data.filter(d => d.impact === 'negative' || d.overall_impact === 'negative').length;
+  document.getElementById('impact-summary').textContent =
+    `${data.length} injections — ${positive} positive, ${negative} negative`;
+
+  if (!data.length) {
+    list.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No injections yet.</div>';
+    return;
+  }
+
+  list.innerHTML = data.map(ev => {
+    const isInception = ev.type === 'inception';
+    const impact = ev.impact || ev.overall_impact || 'neutral';
+    const impactColor = impact === 'positive' ? 'var(--green)' :
+                        impact === 'negative' ? 'var(--red)' : 'var(--muted)';
+    const icon = isInception ? '💉' : '⚡';
+    const typeLabel = isInception ? 'INCEPTION' : 'ACTION';
+
+    let charRows = '';
+    if (isInception) {
+      const delta = ev.delta !== null ? (ev.delta > 0 ? '+' : '') + ev.delta.toFixed(3) : '—';
+      const beforeStr = ev.avg_satisfaction_before !== null ? ev.avg_satisfaction_before.toFixed(3) : '—';
+      const afterStr = ev.avg_satisfaction_after !== null ? ev.avg_satisfaction_after.toFixed(3) : '—';
+      charRows = `<div style="font-size:9px;color:var(--muted);margin-top:3px;">
+        ${ev.given_name || ev.character} &nbsp;
+        Before: <span style="color:var(--text)">${beforeStr}</span> &nbsp;
+        After: <span style="color:var(--text)">${afterStr}</span> &nbsp;
+        Delta: <span style="color:${impactColor};font-weight:600;">${delta}</span>
+      </div>`;
+    } else {
+      charRows = (ev.characters || []).map(c => {
+        const delta = c.delta !== null ? (c.delta > 0 ? '+' : '') + c.delta.toFixed(3) : '—';
+        const dColor = c.delta > 0.1 ? 'var(--green)' : c.delta < -0.1 ? 'var(--red)' : 'var(--muted)';
+        return `<div style="font-size:9px;color:var(--muted);margin-top:2px;padding-left:8px;">
+          ${c.given_name || c.roster_id} &nbsp;
+          Δ <span style="color:${dColor};font-weight:600;">${delta}</span>
+          ${c.avg_before !== null ? `<span style="color:var(--muted)"> (${c.avg_before.toFixed(2)} → ${c.avg_after !== null ? c.avg_after.toFixed(2) : '?'})</span>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--surface2);">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:10px;">${icon}</span>
+        <span style="font-size:8px;padding:1px 4px;border-radius:2px;
+          background:${isInception ? '#2a1a3a' : '#2a1a10'};
+          color:${isInception ? 'var(--purple)' : 'var(--yellow)'};">${typeLabel}</span>
+        <span style="font-size:9px;color:var(--yellow);">Day ${ev.inject_day}</span>
+        <span style="font-size:8px;padding:1px 5px;border-radius:2px;
+          background:${impactColor}22;color:${impactColor};margin-left:auto;">${impact}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text);margin-top:4px;line-height:1.5;">
+        "${(ev.content_preview || ev.scene_preview || '').substring(0, 100)}"
+      </div>
+      ${charRows}
+    </div>`;
+  }).join('');
+}
+</script>
+
+<!-- ── Drive Distribution Tab ── -->
+<div id="dash-tab-drives" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:280px 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Drive Rankings</span></div>
+      <div class="panel-scroll" id="drives-list"></div>
+    </div>
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Avg Satisfaction by Drive Over Time</span></div>
+      <div style="flex:1;padding:12px;position:relative;">
+        <canvas id="drives-chart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Relationship Trajectory Tab ── -->
+<div id="dash-tab-trajectory" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">💛 Strongest Bonds</span></div>
+      <div class="panel-scroll" id="traj-strongest"></div>
+    </div>
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">📈 Rising Relationships</span></div>
+      <div class="panel-scroll" id="traj-rising"></div>
+    </div>
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">📉 Trust Eroding</span></div>
+      <div class="panel-scroll" id="traj-falling"></div>
+    </div>
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">🧊 Stuck — Many Interactions, Low Bond</span></div>
+      <div class="panel-scroll" id="traj-stuck"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Cast Status Tab ── -->
+<div id="dash-tab-naming" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+    <!-- Active cast -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Active Community</span>
+        <span id="cast-active-count" style="font-size:9px;color:var(--green);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="cast-active-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+    <!-- Departed -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Departed / Deceased</span>
+        <span id="cast-gone-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="cast-gone-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">None yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Drive outcomes ─────────────────────────────────────────────────────────
+let drivesLoaded = false, drivesChart = null;
+let trajectoryLoaded = false, namingLoaded = false;
+
+async function loadDriveOutcomes() {
+  try {
+    const r = await fetch('/api/drive_outcomes');
+    const data = await r.json();
+    drivesLoaded = true;
+    renderDrivesList(data);
+    renderDrivesChart(data);
+  } catch(e) { console.error(e); }
+}
+
+function renderDrivesList(data) {
+  const list = document.getElementById('drives-list');
+  const max = Math.max(...data.series.map(s => Math.abs(s.overall_avg)), 0.01);
+  list.innerHTML = data.series.map((s, i) => {
+    const color = DRIVE_COLOR[s.drive] || '#58a6ff';
+    const avg = s.overall_avg;
+    const bar = Math.round((avg + 1) / 2 * 140);
+    const avgStr = avg >= 0 ? '+' + avg.toFixed(3) : avg.toFixed(3);
+    const avgColor = avg > 0.1 ? 'var(--green)' : avg < -0.1 ? 'var(--red)' : 'var(--muted)';
+    return `<div style="padding:7px 0;border-bottom:1px solid var(--surface2);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+        <span style="font-size:9px;color:var(--muted);min-width:14px;">${i+1}</span>
+        <span style="font-size:11px;font-weight:600;color:${color};">${s.drive}</span>
+        <span style="font-size:9px;color:var(--muted);">${s.character_count} chars</span>
+        <span style="font-size:10px;font-weight:600;color:${avgColor};margin-left:auto;">${avgStr}</span>
+      </div>
+      <div style="background:var(--surface2);height:4px;border-radius:2px;margin-left:20px;position:relative;">
+        <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--border);"></div>
+        <div style="position:absolute;${avg >= 0 ? 'left:50%' : `left:${Math.round((avg+1)/2*100)}%`};
+          width:${Math.abs(avg)*50}%;height:100%;background:${avgColor};border-radius:2px;"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderDrivesChart(data) {
+  const ctx = document.getElementById('drives-chart').getContext('2d');
+  if (drivesChart) drivesChart.destroy();
+  const datasets = data.series.map(s => ({
+    label: s.drive,
+    data: s.data.filter(d => d.avg !== null).map(d => ({ x: d.day, y: d.avg })),
+    borderColor: DRIVE_COLOR[s.drive] || '#58a6ff',
+    borderWidth: 1.5,
+    pointRadius: 0,
+    tension: 0.4,
+    fill: false,
+    spanGaps: true,
+  }));
+  drivesChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161b22', borderColor: '#21262d', borderWidth: 1,
+          titleColor: '#c9d1d9', bodyColor: '#8b949e',
+          titleFont: { family: 'SF Mono,monospace', size: 10 },
+          bodyFont: { family: 'SF Mono,monospace', size: 9 },
+        },
+      },
+      scales: {
+        x: { type: 'linear',
+          ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Simulated Day', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+        },
+        y: { min: -1, max: 1,
+          ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Avg Satisfaction', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+        },
+      },
+    },
+  });
+}
+
+// ── Relationship Trajectory ────────────────────────────────────────────────
+async function loadTrajectory() {
+  try {
+    const r = await fetch('/api/relationship_trajectory');
+    const data = await r.json();
+    trajectoryLoaded = true;
+    renderRelGroup('traj-strongest', data.strongest, 'var(--green)');
+    renderRelGroup('traj-rising', data.rising, '#79c0ff');
+    renderRelGroup('traj-falling', data.falling, 'var(--red)');
+    renderRelGroup('traj-stuck', data.stuck, 'var(--muted)');
+  } catch(e) { console.error(e); }
+}
+
+function renderRelGroup(elId, rels, accentColor) {
+  const el = document.getElementById(elId);
+  if (!rels.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:10px;font-size:10px;">None yet.</div>';
+    return;
+  }
+  el.innerHTML = rels.map(r => `
+    <div style="padding:6px 0;border-bottom:1px solid var(--surface2);">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:11px;font-weight:600;color:${accentColor};">${r.from_name}</span>
+        <span style="font-size:9px;color:var(--muted);">↔</span>
+        <span style="font-size:11px;font-weight:600;color:${accentColor};">${r.to_name}</span>
+        <span style="font-size:9px;color:var(--muted);margin-left:auto;">${r.interactions} talks</span>
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:2px;">
+        Familiarity <span style="color:var(--text)">${(r.familiarity*100).toFixed(0)}%</span>
+        &nbsp;Trust <span style="color:${r.trust>0?'var(--green)':r.trust<0?'var(--red)':'var(--muted)'}">${r.trust>0?'+':''}${r.trust.toFixed(3)}</span>
+        ${r.bond_type ? `<span style="color:var(--purple)"> · ${r.bond_type}</span>` : ''}
+      </div>
+      ${r.note ? `<div style="font-size:9px;color:var(--yellow);margin-top:1px;">${r.note}</div>` : ''}
+    </div>`).join('');
+}
+
+// ── Cast Status ────────────────────────────────────────────────────────────
+const SCENE_TYPE_COLORS = {
+  preparation: '#d29922', return: '#3fb950', distribution: '#58a6ff',
+  argument: '#f85149', correction: '#bc8cff', resentment: '#e6904a',
+  quiet_intimacy: '#f778ba', gossip: '#6e7681', teaching: '#79c0ff',
+  status_challenge: '#ff6b35', ritual: '#c084fc', daily_life: '#484f58',
+};
+
+async function loadNamingSociology() {
+  try {
+    const r = await fetch('/api/cast_status');
+    const data = await r.json();
+    namingLoaded = true;
+
+    const active = data.filter(c => c.alive);
+    const gone = data.filter(c => !c.alive);
+
+    document.getElementById('cast-active-count').textContent = `${active.length} members`;
+    document.getElementById('cast-gone-count').textContent = gone.length ? `${gone.length} gone` : '';
+
+    const activeEl = document.getElementById('cast-active-list');
+    activeEl.innerHTML = active.map(c => {
+      const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+      const driveColor = DRIVE_COLOR[c.core_drive] || '#58a6ff';
+      const famBar = Math.round(c.max_familiarity * 80);
+      const famColor = c.max_familiarity > 0.5 ? 'var(--green)' : c.max_familiarity > 0.2 ? 'var(--yellow)' : 'var(--muted)';
+      const minorBadge = c.is_minor ? '<span style="font-size:8px;color:var(--muted);"> minor</span>' : '';
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:600;color:${gColor};">${c.given_name || c.roster_id}</span>
+          ${minorBadge}
+          <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${driveColor}22;color:${driveColor};">${c.core_drive}</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:auto;">age ${c.age}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:3px;">
+          <span style="font-size:9px;color:var(--accent);">${c.scenes} scenes</span>
+          <span style="font-size:9px;color:var(--muted);">${c.relationships} rels</span>
+          <div style="flex:1;background:var(--surface2);height:3px;border-radius:2px;">
+            <div style="width:${famBar}px;max-width:100%;height:100%;background:${famColor};border-radius:2px;"></div>
+          </div>
+          <span style="font-size:9px;color:${famColor};">${(c.max_familiarity*100).toFixed(0)}%</span>
+        </div>
+      </div>`;
+    }).join('') || '<div style="color:var(--muted);padding:10px;font-size:10px;">No active characters.</div>';
+
+    const goneEl = document.getElementById('cast-gone-list');
+    goneEl.innerHTML = gone.length ? gone.map(c => {
+      const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--surface2);opacity:0.5;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;color:${gColor};">${c.given_name || c.roster_id}</span>
+          <span style="font-size:9px;color:var(--muted);">age ${c.age}</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:auto;">${c.scenes} scenes before leaving</span>
+        </div>
+      </div>`;
+    }).join('') : '<div style="color:var(--muted);padding:10px;font-size:10px;">No one has left yet.</div>';
+
+  } catch(e) {
+    console.error('Cast status error:', e);
+    const activeEl = document.getElementById('cast-active-list');
+    if (activeEl) activeEl.innerHTML = `<div style="color:var(--red);padding:10px;font-size:10px;">Error loading cast: ${e.message}</div>`;
+  }
+}
+let sceneFeedLoaded = false;
+
+function showTopRight(view) {
+  const relweb = document.getElementById('relweb-view');
+  const scenefeed = document.getElementById('scenefeed-view');
+  const btnR = document.getElementById('btn-relweb');
+  const btnS = document.getElementById('btn-scenefeed');
+  const title = document.getElementById('top-right-title');
+
+  if (view === 'relweb') {
+    relweb.style.display = 'block';
+    scenefeed.style.display = 'none';
+    btnR.classList.add('active'); btnS.classList.remove('active');
+    title.textContent = 'Relationship Web';
+  } else {
+    relweb.style.display = 'none';
+    scenefeed.style.display = 'flex';
+    btnR.classList.remove('active'); btnS.classList.add('active');
+    title.textContent = 'Recent Scenes';
+    if (!sceneFeedLoaded) loadSceneFeed();
+  }
+}
+
+async function loadSceneFeed() {
+  const el = document.getElementById('scenefeed-content');
+  try {
+    const r = await fetch('/api/recent_scenes?limit=40');
+    const scenes = await r.json();
+    sceneFeedLoaded = true;
+
+    if (!scenes.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:10px;">No scenes yet. Run some ticks.</div>';
+      return;
+    }
+
+    el.innerHTML = scenes.map(s => {
+      const stColor = SCENE_TYPE_COLORS[s.scene_type] || '#484f58';
+      const pnames = s.participants.map(p => p.given_name || p.roster_id).join(', ');
+      const groupBadge = s.is_group ? '👥 ' : '';
+      const injBadge = s.pressure_type === 'injected'
+        ? '<span style="font-size:8px;color:var(--yellow);margin-left:4px;">⚡ injected</span>' : '';
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;">
+          <span style="font-size:8px;color:var(--muted);min-width:38px;">Day ${s.sim_day}</span>
+          <span style="font-size:8px;padding:1px 5px;border-radius:2px;background:${stColor}22;color:${stColor};">${(s.scene_type||'').replace(/_/g,' ')}</span>
+          ${injBadge}
+          <span style="font-size:8px;color:var(--muted);margin-left:auto;">${s.exchange_count} ex · ${s.location}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text);padding-left:44px;margin-bottom:2px;">${groupBadge}${pnames}</div>
+        ${s.first_line ? `<div style="font-size:9px;color:var(--muted);padding-left:44px;font-style:italic;">"${s.first_line.substring(0,100)}${s.first_line.length>100?'…':''}"</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:10px;">Could not load scenes.</div>';
+  }
+}
+
+
+</script>
+
+<!-- ── Biology Tab ── -->
+<div id="dash-tab-biology" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+
+    <!-- Top left: Per-character bio state -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Biological State — All Characters</span>
+        <span id="bio-pop-avg" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="bio-char-list"></div>
+    </div>
+
+    <!-- Top right: Hormonal distribution + correlation -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Hormonal Distribution & Bio-Psych Correlation</span></div>
+      <div class="panel-scroll" id="bio-hormonal"></div>
+    </div>
+
+    <!-- Bottom left: Attraction network -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Physical Attraction Network</span>
+        <span id="bio-attr-counts" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="bio-attraction"></div>
+    </div>
+
+    <!-- Bottom right: Bio vs Psych scatter -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Bio Satisfaction vs Psychological Satisfaction</span></div>
+      <div style="flex:1;padding:10px;position:relative;">
+        <canvas id="bio-scatter-chart"></canvas>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let biologyLoaded = false;
+let scenesLoaded = false;
+let questionsLoaded = false;
+let bioScatterChart = null;
+
+const HORMONAL_COLORS = {
+  baseline: '#484f58', restless: '#d29922', heightened: '#bc8cff',
+  depleted: '#58a6ff', aggressive: '#f85149', calm: '#3fb950',
+  aroused: '#f778ba', 'n/a': '#21262d',
+};
+
+async function loadBiologyAnalytics() {
+  try {
+    const r = await fetch('/api/biology_analytics');
+    const data = await r.json();
+    biologyLoaded = true;
+    renderBioCharList(data);
+    renderBioHormonal(data);
+    renderBioAttraction(data);
+    renderBioScatter(data);
+  } catch(e) { console.error('Biology analytics error:', e); }
+}
+
+function renderBioCharList(data) {
+  const list = document.getElementById('bio-char-list');
+  const avg = data.population_avg;
+  document.getElementById('bio-pop-avg').textContent =
+    `Pop avg — hunger: ${avg.avg_hunger.toFixed(1)} fatigue: ${avg.avg_fatigue.toFixed(1)}`;
+
+  list.innerHTML = data.character_biology.map(c => {
+    const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+    const hColor = HORMONAL_COLORS[c.hormonal_state] || '#484f58';
+    const bioColor = c.bio_satisfaction > 0.6 ? 'var(--green)' :
+                     c.bio_satisfaction > 0.3 ? 'var(--yellow)' : 'var(--red)';
+    const hungerBar = Math.round(c.hunger / 10 * 80);
+    const fatBar = Math.round(c.fatigue / 10 * 80);
+
+    return `<div style="padding:5px 0;border-bottom:1px solid var(--surface2);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+        <span style="font-size:10px;font-weight:600;color:${gColor};">${c.given_name||c.roster_id}</span>
+        <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${hColor}22;color:${hColor};">${c.hormonal_state}</span>
+        <span style="font-size:9px;color:${bioColor};margin-left:auto;">bio ${c.bio_satisfaction.toFixed(2)}</span>
+        ${c.psych_satisfaction !== null ? `<span style="font-size:9px;color:var(--muted);">psych ${c.psych_satisfaction.toFixed(2)}</span>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-left:2px;">
+        <span style="font-size:8px;color:var(--muted);min-width:36px;">🍖 ${c.hunger.toFixed(1)}</span>
+        <div style="background:var(--surface2);height:3px;border-radius:2px;width:80px;">
+          <div style="width:${hungerBar}px;height:100%;background:${c.hunger>7?'var(--red)':c.hunger>4?'var(--yellow)':'var(--green)'};border-radius:2px;"></div>
+        </div>
+        <span style="font-size:8px;color:var(--muted);min-width:36px;">💤 ${c.fatigue.toFixed(1)}</span>
+        <div style="background:var(--surface2);height:3px;border-radius:2px;width:80px;">
+          <div style="width:${fatBar}px;height:100%;background:${c.fatigue>7?'var(--red)':c.fatigue>4?'var(--yellow)':'var(--green)'};border-radius:2px;"></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderBioHormonal(data) {
+  const el = document.getElementById('bio-hormonal');
+  const dist = data.hormonal_distribution;
+  const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
+
+  const hormoneRows = Object.entries(dist)
+    .sort((a, b) => b[1] - a[1])
+    .map(([state, count]) => {
+      const color = HORMONAL_COLORS[state] || '#484f58';
+      const pct = Math.round(count / total * 100);
+      const bar = Math.round(pct / 100 * 180);
+      return `<div style="padding:5px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <span style="font-size:10px;font-weight:600;color:${color};min-width:70px;">${state}</span>
+          <span style="font-size:9px;color:var(--muted);">${count} chars (${pct}%)</span>
+        </div>
+        <div style="background:var(--surface2);height:4px;border-radius:2px;">
+          <div style="width:${bar}px;max-width:100%;height:100%;background:${color};border-radius:2px;opacity:0.8;"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+  const corrColor = data.correlation > 0.3 ? 'var(--green)' :
+                    data.correlation < -0.2 ? 'var(--red)' : 'var(--yellow)';
+
+  el.innerHTML = `
+    <div style="padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:1px;margin-bottom:6px;">HORMONAL STATES</div>
+      ${hormoneRows}
+    </div>
+    <div style="padding:8px 0;">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:1px;margin-bottom:6px;">BIO ↔ PSYCH CORRELATION</div>
+      <div style="font-size:18px;font-weight:700;color:${corrColor};margin-bottom:4px;">
+        ${data.correlation !== null ? (data.correlation > 0 ? '+' : '') + data.correlation : '—'}
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.5;">${data.correlation_interpretation}</div>
+    </div>`;
+}
+
+function renderBioAttraction(data) {
+  const el = document.getElementById('bio-attraction');
+  document.getElementById('bio-attr-counts').textContent =
+    `${data.attraction_network.length} attractions · ${data.mutual_attraction_count} mutual · ${data.high_intensity_count} high intensity`;
+
+  if (!data.attraction_network.length) {
+    el.innerHTML = '<div style="color:var(--muted);padding:10px;font-size:10px;">No attraction data yet.</div>';
+    return;
+  }
+
+  el.innerHTML = data.attraction_network.slice(0, 30).map(a => {
+    const fromColor = a.from_gender === 'F' ? '#f778ba' : '#58a6ff';
+    const toColor = a.to_gender === 'F' ? '#f778ba' : '#58a6ff';
+    const intColor = a.intensity === 'high' ? 'var(--red)' :
+                     a.intensity === 'medium' ? 'var(--yellow)' : 'var(--muted)';
+    const mutualBadge = a.is_mutual
+      ? '<span style="font-size:8px;color:var(--green);margin-left:4px;">↔ mutual</span>'
+      : '';
+    const famBadge = a.familiarity > 0.4
+      ? `<span style="font-size:8px;color:var(--accent);margin-left:4px;">fam ${(a.familiarity*100).toFixed(0)}%</span>`
+      : '';
+
+    return `<div style="padding:5px 0;border-bottom:1px solid var(--surface2);">
+      <div style="display:flex;align-items:center;gap:4px;">
+        <span style="font-size:10px;font-weight:600;color:${fromColor};">${a.from_name}</span>
+        <span style="font-size:9px;color:${intColor};">→</span>
+        <span style="font-size:10px;font-weight:600;color:${toColor};">${a.to_name}</span>
+        ${mutualBadge}${famBadge}
+        <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${intColor}22;color:${intColor};margin-left:auto;">${a.intensity}</span>
+      </div>
+      <div style="font-size:9px;color:var(--muted);margin-top:1px;">
+        attraction ${(a.attraction_level*100).toFixed(0)}%
+        ${a.acknowledged ? ' · surfaced in conversation' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderBioScatter(data) {
+  const ctx = document.getElementById('bio-scatter-chart').getContext('2d');
+  if (bioScatterChart) bioScatterChart.destroy();
+
+  const points = data.correlation_data || data.character_biology.filter(
+    c => c.psych_satisfaction !== null
+  );
+
+  const datasets = Object.keys(DRIVE_COLOR).map(drive => ({
+    label: drive,
+    data: points
+      .filter(c => c.core_drive === drive)
+      .map(c => ({ x: c.bio_satisfaction, y: c.psych_satisfaction, label: c.given_name || c.roster_id })),
+    backgroundColor: (DRIVE_COLOR[drive] || '#58a6ff') + 'cc',
+    borderColor: DRIVE_COLOR[drive] || '#58a6ff',
+    pointRadius: 6,
+    pointHoverRadius: 8,
+  })).filter(d => d.data.length > 0);
+
+  bioScatterChart = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#21262d',
+          borderWidth: 1,
+          titleColor: '#c9d1d9',
+          bodyColor: '#8b949e',
+          titleFont: { family: 'SF Mono,monospace', size: 10 },
+          bodyFont: { family: 'SF Mono,monospace', size: 9 },
+          callbacks: {
+            label: ctx => `${ctx.raw.label}: bio ${ctx.raw.x.toFixed(2)}, psych ${ctx.raw.y.toFixed(2)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          min: 0, max: 1,
+          ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Biological Satisfaction', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+        },
+        y: {
+          min: -1, max: 1,
+          ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'Psychological Satisfaction', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+        },
+      },
+    },
+  });
+}
+
+// Wire into switchDashTab
+
+</script>
+
+<!-- ── Transcripts Tab ── -->
+<div id="dash-tab-transcripts" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:220px 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Characters</span></div>
+      <div class="panel-scroll" id="transcript-char-list"><div style="color:var(--muted);padding:10px;font-size:10px;">Loading...</div></div>
+    </div>
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title" id="transcript-title">Select a character</span>
+        <span id="transcript-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="transcript-list"><div style="color:var(--muted);padding:10px;font-size:10px;">Select a character on the left.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Themes Tab ── -->
+<div id="dash-tab-themes" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:flex;flex-direction:column;height:100%;overflow:hidden;">
+    <div class="panel-head" style="gap:8px;flex-wrap:wrap;">
+      <span class="panel-title">Theme Search</span>
+      <input id="theme-query" placeholder="Search all dialogue... (food, afraid, together, name...)"
+        style="flex:1;min-width:200px;background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:10px;padding:4px 8px;border-radius:3px;"
+        onkeydown="if(event.key==='Enter') runThemeSearch()">
+      <select id="theme-char-filter" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:var(--font);font-size:9px;padding:3px 6px;border-radius:3px;">
+        <option value="">All characters</option>
+      </select>
+      <button onclick="runThemeSearch()" style="background:transparent;border:1px solid var(--accent);color:var(--accent);font-family:var(--font);font-size:9px;padding:4px 10px;border-radius:3px;cursor:pointer;">🔍 Search</button>
+      <span id="theme-result-count" style="font-size:9px;color:var(--muted);"></span>
+    </div>
+    <div class="panel-scroll" id="theme-results">
+      <div style="color:var(--muted);padding:12px;font-size:10px;">Enter a word or phrase to search all of Caldwell history.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+function loadTranscriptChars() {
+  if (_transcriptCharsLoaded) return;
+  fetch('/api/characters').then(function(r) { return r.json(); }).then(function(chars) {
+    _charCache = chars;
+    _transcriptCharsLoaded = true;
+    var list = document.getElementById('transcript-char-list');
+    if (list) {
+      list.innerHTML = '';
+      for (var i = 0; i < chars.length; i++) {
+        var c = chars[i];
+        var div = document.createElement('div');
+        div.style.cssText = 'padding:6px 10px;border-bottom:1px solid var(--surface2);cursor:pointer;';
+        div.dataset.rid = c.roster_id;
+        div.addEventListener('mouseover', function() { this.style.background = 'var(--surface2)'; });
+        div.addEventListener('mouseout', function() { this.style.background = 'transparent'; });
+        div.addEventListener('click', function() { loadTranscripts(this.dataset.rid); });
+        var gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+        var name = c.given_name || c.roster_id;
+        div.innerHTML = '<div style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="font-size:10px;font-weight:600;color:' + gColor + ';">' + name + '</span>' +
+          '<span style="font-size:8px;color:var(--muted);">' + (c.core_drive || '') + '</span>' +
+          '<span style="font-size:8px;color:var(--muted);margin-left:auto;">age ' + c.age + '</span>' +
+          '</div>';
+        list.appendChild(div);
+      }
+    }
+    var filter = document.getElementById('theme-char-filter');
+    if (filter) {
+      for (var j = 0; j < chars.length; j++) {
+        var opt = document.createElement('option');
+        opt.value = chars[j].roster_id;
+        opt.textContent = (chars[j].given_name || chars[j].roster_id) + ' (' + chars[j].roster_id + ')';
+        filter.appendChild(opt);
+      }
+    }
+  }).catch(function(e) { console.error('loadTranscriptChars error:', e); });
+}
+
+function loadTranscripts(roster_id) {
+  var list = document.getElementById('transcript-list');
+  var title = document.getElementById('transcript-title');
+  if (list) list.innerHTML = '<div style="color:var(--muted);padding:10px;font-size:10px;">Loading...</div>';
+  if (title) title.textContent = 'Loading...';
+
+  fetch('/api/character_transcripts/' + roster_id).then(function(r) { return r.json(); }).then(function(data) {
+    if (title) title.textContent = (data.given_name || data.roster_id) + ' — age ' + data.age + ' — ' + data.core_drive;
+    var countEl = document.getElementById('transcript-count');
+    if (countEl) countEl.textContent = data.total_conversations + ' conversations';
+
+    if (!data.conversations || !data.conversations.length) {
+      if (list) list.innerHTML = '<div style="color:var(--muted);padding:10px;font-size:10px;">No conversations found.</div>';
+      return;
+    }
+
+    var char = _charCache ? _charCache.find(function(c) { return c.roster_id === roster_id; }) : null;
+    var gColor = char && char.gender === 'F' ? '#f778ba' : '#58a6ff';
+
+    if (list) list.innerHTML = '';
+    var convs = data.conversations.slice().reverse();
+    for (var ci = 0; ci < convs.length; ci++) {
+      var conv = convs[ci];
+      var card = document.createElement('div');
+      card.style.cssText = 'border:1px solid var(--border);border-radius:4px;margin-bottom:10px;overflow:hidden;';
+
+      var otherNames = conv.participants.map(function(p) {
+        var pc = p.gender === 'F' ? '#f778ba' : '#58a6ff';
+        return '<span style="color:' + pc + ';font-weight:600;">' + (p.given_name || p.roster_id) + '</span>';
+      }).join(', ');
+
+      var typeLabel = conv.is_action_inject ? ' <span style="font-size:8px;color:var(--yellow);">⚡</span>' :
+                     conv.is_group ? ' <span style="font-size:8px;color:var(--purple);">👥</span>' : '';
+
+      var header = document.createElement('div');
+      header.style.cssText = 'background:var(--surface);padding:6px 10px;display:flex;align-items:center;gap:8px;cursor:pointer;';
+      header.innerHTML = '<span style="font-size:9px;color:var(--yellow);">Day ' + conv.sim_day + '</span>' +
+        '<span style="font-size:9px;color:var(--muted);">' + conv.location + '</span>' +
+        '<span style="font-size:10px;">' + otherNames + '</span>' + typeLabel +
+        '<span style="font-size:8px;color:var(--muted);margin-left:auto;">' + conv.exchange_count + ' turns ▾</span>';
+
+      var body = document.createElement('div');
+      body.style.cssText = 'display:none;padding:8px 10px;background:var(--bg);';
+
+      var exchanges = conv.exchanges.filter(function(e) { return e.roster_id !== 'OPERATOR' && e.roster_id; });
+      for (var ei = 0; ei < exchanges.length; ei++) {
+        var ex = exchanges[ei];
+        var isChar = ex.roster_id === roster_id;
+        var spColor = isChar ? gColor : '#8b949e';
+        var spName = ex.given_name || ex.roster_id || '';
+        var exDiv = document.createElement('div');
+        exDiv.style.cssText = 'padding:3px 0;border-bottom:1px solid rgba(33,38,45,0.5);';
+        exDiv.innerHTML = '<span style="font-size:9px;font-weight:600;color:' + spColor + ';">' + spName + '</span>' +
+          '<span style="font-size:10px;color:' + (isChar ? '#c9d1d9' : '#8b949e') + ';"> ' + (ex.text || '') + '</span>';
+        body.appendChild(exDiv);
+      }
+
+      header.addEventListener('click', function(b) {
+        return function() { b.style.display = b.style.display === 'none' ? 'block' : 'none'; };
+      }(body));
+
+      card.appendChild(header);
+      card.appendChild(body);
+      if (list) list.appendChild(card);
+    }
+  }).catch(function(e) {
+    if (list) list.innerHTML = '<div style="color:var(--muted);padding:10px;">Could not load.</div>';
+    console.error(e);
+  });
+}
+
+function runThemeSearch() {
+  var query = document.getElementById('theme-query').value.trim();
+  var charFilter = document.getElementById('theme-char-filter').value;
+  var results = document.getElementById('theme-results');
+  var countEl = document.getElementById('theme-result-count');
+  if (!query) return;
+
+  results.innerHTML = '<div style="color:var(--muted);padding:10px;font-size:10px;">Searching...</div>';
+  if (countEl) countEl.textContent = '';
+
+  var url = '/api/theme_search?query=' + encodeURIComponent(query) + '&limit=100';
+  if (charFilter) url += '&roster_id=' + charFilter;
+
+  fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+    if (countEl) countEl.textContent = data.length + ' conversations matched';
+    if (!data.length) {
+      results.innerHTML = '<div style="color:var(--muted);padding:10px;font-size:10px;">No matches for "' + query + '".</div>';
+      return;
+    }
+    results.innerHTML = data.map(function(res) {
+      var pNames = res.participants.map(function(p) {
+        var pColor = p.gender === 'F' ? '#f778ba' : '#58a6ff';
+        return '<span style="color:' + pColor + ';font-weight:600;">' + (p.given_name || p.roster_id) + '</span>';
+      }).join(', ');
+
+      var matchHtml = res.matching_exchanges.map(function(ex) {
+        var gColor = ex.gender === 'F' ? '#f778ba' : '#58a6ff';
+        var text = (ex.text || '').replace(new RegExp(query.replace(/[.*+?^${}()|[\]]/g, '\\$&'), 'gi'),
+          function(m) { return '<mark style="background:#d29922;color:#000;border-radius:2px;padding:0 2px;">' + m + '</mark>'; });
+        return '<div style="padding:4px 0;border-bottom:1px solid rgba(33,38,45,0.5);">' +
+          '<span style="font-size:9px;font-weight:600;color:' + gColor + ';">' + (ex.given_name || ex.roster_id || '') + '</span>' +
+          '<span style="font-size:10px;color:#c9d1d9;"> ' + text + '</span></div>';
+      }).join('');
+
+      return '<div style="border:1px solid var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden;">' +
+        '<div style="background:var(--surface);padding:5px 10px;display:flex;align-items:center;gap:8px;">' +
+        (res.is_action_inject ? '<span style="font-size:8px;color:var(--yellow);">⚡</span>' : '') +
+        '<span style="font-size:9px;color:var(--yellow);">Day ' + res.sim_day + '</span>' +
+        '<span style="font-size:9px;color:var(--muted);">' + res.location + '</span>' +
+        '<span style="font-size:10px;">' + pNames + '</span>' +
+        '<span style="font-size:8px;color:var(--accent);margin-left:auto;">' + res.matching_exchanges.length + ' match(es)</span>' +
+        '</div>' +
+        '<div style="padding:8px 10px;background:var(--bg);">' + matchHtml + '</div></div>';
+    }).join('');
+  }).catch(function(e) {
+    results.innerHTML = '<div style="color:var(--muted);padding:10px;">Search failed.</div>';
+    console.error(e);
+  });
+}
+</script>
+
+<!-- ── Scene Categories Tab ── -->
+<div id="dash-tab-scenes" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:320px 1fr;grid-template-rows:1fr 1fr;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+
+    <!-- Top-left: Category totals -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Scene Categories — All Time</span>
+        <span id="scenes-total" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="scenes-category-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Top-right: Category chart over time -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Scene Categories Over Time</span></div>
+      <div style="flex:1;padding:10px;position:relative;">
+        <canvas id="scenes-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Bottom-left: Per-character top category -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Character Scene Profile</span></div>
+      <div class="panel-scroll" id="scenes-char-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Bottom-right: Category descriptions -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head"><span class="panel-title">Category Definitions</span></div>
+      <div class="panel-scroll" id="scenes-definitions"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let scenesChart = null;
+const SCENE_DEFS = {
+  work:        "Labor, tasks, hunting, building, cooking, food distribution, physical survival activities.",
+  community:   "Establishing shared norms, governance decisions, agreements about how people live together.",
+  philosophy:  "Meaning, existence, abstract questioning, belief systems, what things are for.",
+  controlling: "Power dynamics, authority, dominance, enforcement, compliance, commands.",
+  conflict:    "Argument, grievance, confrontation, accusation, resentment expressed openly.",
+  connection:  "Emotional care, vulnerability, warmth, belonging — non-sexual closeness.",
+  sexual:      "Desire, physical attraction, romantic physical contact.",
+  self:        "Self-focused internal processing, identity, personal realization, what one wants for oneself.",
+  knowledge:   "Teaching, learning, skill transfer, discovery, passing on understanding.",
+  survival:    "Immediate danger, hunger, cold, threat to physical safety.",
+  grief:       "Loss, death, absence, mourning, what remains when someone is gone.",
+  ritual:      "Ceremony, tradition, repeated meaningful behavior that has acquired weight.",
+  gossip:      "Social navigation, reputation management, talking about absent others.",
+};
+
+async function loadSceneCategories() {
+  try {
+    const r = await fetch('/api/scene_categories');
+    const data = await r.json();
+    scenesLoaded = true;
+
+    const totals = data.totals || {};
+    const labels = data.labels || {};
+    const colors = data.colors || {};
+    const byDay = data.by_day || [];
+    const charBreakdown = data.character_breakdown || [];
+
+    const totalCount = Object.values(totals).reduce((a, b) => a + b, 0);
+    document.getElementById('scenes-total').textContent = `${totalCount} scenes total`;
+
+    // Category list
+    const catEl = document.getElementById('scenes-category-list');
+    const sorted = Object.entries(totals)
+      .filter(([,v]) => v > 0)
+      .sort(([,a], [,b]) => b - a);
+
+    catEl.innerHTML = sorted.length ? sorted.map(([cat, count]) => {
+      const color = colors[cat] || '#58a6ff';
+      const label = labels[cat] || cat;
+      const pct = totalCount > 0 ? Math.round(count / totalCount * 100) : 0;
+      const bar = Math.round(pct / 100 * 200);
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span style="font-size:10px;font-weight:600;color:${color};min-width:140px;">${label}</span>
+          <span style="font-size:9px;color:var(--muted);">${count} scenes</span>
+          <span style="font-size:9px;color:${color};margin-left:auto;">${pct}%</span>
+        </div>
+        <div style="background:var(--surface2);height:4px;border-radius:2px;">
+          <div style="width:${bar}px;max-width:100%;height:100%;background:${color};border-radius:2px;opacity:0.8;"></div>
+        </div>
+      </div>`;
+    }).join('') : '<div style="color:var(--muted);padding:10px;font-size:10px;">No scenes categorized yet. Run more ticks.</div>';
+
+    // Character breakdown
+    const charEl = document.getElementById('scenes-char-list');
+    charEl.innerHTML = charBreakdown.map(c => {
+      const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+      const topColor = c.top_category ? (colors[c.top_category] || '#58a6ff') : '#484f58';
+      const topLabel = c.top_category ? (labels[c.top_category] || c.top_category) : '—';
+      const driveColor = DRIVE_COLOR[c.core_drive] || '#58a6ff';
+      // Mini breakdown bars
+      const catCounts = c.category_counts || {};
+      const miniCats = Object.entries(catCounts)
+        .sort(([,a],[,b]) => b - a)
+        .slice(0, 4)
+        .map(([cat, n]) => {
+          const col = colors[cat] || '#484f58';
+          return `<span style="font-size:8px;margin-right:4px;color:${col};">${labels[cat]||cat} ${n}</span>`;
+        }).join('');
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <span style="font-size:11px;font-weight:600;color:${gColor};">${c.given_name || c.roster_id}</span>
+          <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${driveColor}22;color:${driveColor};">${c.core_drive}</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:auto;">${c.total_scenes} scenes</span>
+        </div>
+        <div style="margin-top:2px;">${miniCats || '<span style="font-size:8px;color:var(--muted);">No scenes yet</span>'}</div>
+      </div>`;
+    }).join('') || '<div style="color:var(--muted);padding:10px;font-size:10px;">No data yet.</div>';
+
+    // Definitions
+    const defEl = document.getElementById('scenes-definitions');
+    defEl.innerHTML = Object.entries(SCENE_DEFS).map(([cat, def]) => {
+      const color = colors[cat] || '#58a6ff';
+      const label = labels[cat] || cat;
+      const count = totals[cat] || 0;
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+          <span style="font-size:10px;font-weight:600;color:${color};">${label}</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:auto;">${count} scenes</span>
+        </div>
+        <div style="font-size:9px;color:var(--muted);line-height:1.5;">${def}</div>
+      </div>`;
+    }).join('');
+
+    // Chart
+    if (byDay.length > 0) {
+      const cats = Object.keys(SCENE_DEFS);
+      const days = byDay.map(d => d.day);
+      const datasets = cats
+        .filter(cat => byDay.some(d => (d[cat] || 0) > 0))
+        .map(cat => ({
+          label: labels[cat] || cat,
+          data: byDay.map(d => d[cat] || 0),
+          borderColor: colors[cat] || '#58a6ff',
+          backgroundColor: (colors[cat] || '#58a6ff') + '30',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          tension: 0.3,
+          fill: false,
+        }));
+
+      const ctx = document.getElementById('scenes-chart').getContext('2d');
+      if (scenesChart) scenesChart.destroy();
+      scenesChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: days, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#161b22',
+              borderColor: '#21262d',
+              borderWidth: 1,
+              titleColor: '#c9d1d9',
+              bodyColor: '#8b949e',
+              titleFont: { family: 'SF Mono,monospace', size: 10 },
+              bodyFont: { family: 'SF Mono,monospace', size: 9 },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 }, maxTicksLimit: 15 },
+              grid: { color: '#21262d' },
+              title: { display: true, text: 'Simulated Day', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+            },
+            y: {
+              ticks: { color: '#484f58', font: { family: 'SF Mono,monospace', size: 9 } },
+              grid: { color: '#21262d' },
+              title: { display: true, text: 'Scene Count', color: '#484f58', font: { size: 9, family: 'SF Mono,monospace' } },
+            },
+          },
+        },
+      });
+    }
+  } catch(e) {
+    console.error('Scene categories error:', e);
+    document.getElementById('scenes-category-list').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+}
+</script>
+
+
+<!-- ── Open Questions Tab ── -->
+<div id="dash-tab-questions" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:1fr 360px;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+
+    <!-- Left: Active questions feed -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Active Open Questions</span>
+        <span id="questions-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+        <button onclick="loadOpenQuestions()" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:2px 8px;font-family:var(--font);font-size:9px;cursor:pointer;border-radius:3px;margin-left:8px;">↺</button>
+      </div>
+      <div class="panel-scroll" id="questions-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Right: Per-character breakdown -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">By Character</span>
+      </div>
+      <div class="panel-scroll" id="questions-by-char">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+async function loadOpenQuestions() {
+  try {
+    const r = await fetch('/api/open_questions');
+    const data = await r.json();
+    questionsLoaded = true;
+
+    document.getElementById('questions-count').textContent =
+      `${data.length} unresolved`;
+
+    const listEl = document.getElementById('questions-list');
+    if (!data.length) {
+      listEl.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No active open questions yet. Run more ticks.</div>';
+      document.getElementById('questions-by-char').innerHTML = listEl.innerHTML;
+      return;
+    }
+
+    // Sort by intensity desc
+    data.sort((a, b) => b.intensity - a.intensity);
+
+    listEl.innerHTML = data.map(q => {
+      const gColor = q.gender === 'F' ? '#f778ba' : '#58a6ff';
+      const driveColor = DRIVE_COLOR[q.core_drive] || '#58a6ff';
+      const intensityColor = q.intensity >= 0.7 ? 'var(--red)' :
+                             q.intensity >= 0.5 ? 'var(--yellow)' : 'var(--muted)';
+      const intensityBar = Math.round(q.intensity * 120);
+      const sourceIcon = q.source_type === 'observation' ? '👁' :
+                         q.source_type === 'discovery' ? '🔍' : '💬';
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span style="font-size:11px;font-weight:600;color:${gColor};">${q.character}</span>
+          <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${driveColor}22;color:${driveColor};">${q.core_drive}</span>
+          <span style="font-size:8px;color:var(--muted);">${sourceIcon} day ${q.emerged_day}</span>
+          <span style="font-size:9px;color:${intensityColor};margin-left:auto;">
+            ${(q.intensity * 100).toFixed(0)}% · ${q.times_surfaced} scenes
+          </span>
+        </div>
+        <div style="font-size:11px;color:var(--text);line-height:1.6;margin-bottom:4px;padding-left:2px;">
+          "${q.question}"
+        </div>
+        ${q.understanding ? `<div style="font-size:9px;color:var(--muted);padding-left:2px;margin-bottom:3px;font-style:italic;">Knows so far: ${q.understanding.substring(0,120)}${q.understanding.length>120?'…':''}</div>` : ''}
+        <div style="background:var(--surface2);height:3px;border-radius:2px;">
+          <div style="width:${intensityBar}px;max-width:100%;height:100%;background:${intensityColor};border-radius:2px;opacity:0.7;"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Per-character breakdown
+    const byChar = {};
+    data.forEach(q => {
+      if (!byChar[q.roster_id]) byChar[q.roster_id] = { name: q.character, gender: q.gender, drive: q.core_drive, questions: [] };
+      byChar[q.roster_id].questions.push(q);
+    });
+
+    const charEl = document.getElementById('questions-by-char');
+    const charsSorted = Object.values(byChar).sort((a, b) =>
+      Math.max(...b.questions.map(q => q.intensity)) - Math.max(...a.questions.map(q => q.intensity))
+    );
+
+    charEl.innerHTML = charsSorted.map(c => {
+      const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+      const driveColor = DRIVE_COLOR[c.drive] || '#58a6ff';
+      const topQ = c.questions[0];
+      const topIntensityColor = topQ.intensity >= 0.7 ? 'var(--red)' :
+                                topQ.intensity >= 0.5 ? 'var(--yellow)' : 'var(--muted)';
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--surface2);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          <span style="font-size:11px;font-weight:600;color:${gColor};">${c.name}</span>
+          <span style="font-size:8px;padding:1px 4px;border-radius:2px;background:${driveColor}22;color:${driveColor};">${c.drive}</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:auto;">${c.questions.length} question${c.questions.length > 1 ? 's' : ''}</span>
+        </div>
+        ${c.questions.map(q => `
+          <div style="font-size:9px;color:var(--muted);padding:2px 0 2px 4px;border-left:2px solid ${topIntensityColor}30;margin-bottom:2px;line-height:1.5;">
+            <span style="color:${topIntensityColor};margin-right:4px;">${(q.intensity*100).toFixed(0)}%</span>
+            ${q.question.length > 90 ? q.question.substring(0, 90) + '…' : q.question}
+          </div>`).join('')}
+      </div>`;
+    }).join('') || '<div style="color:var(--muted);padding:10px;font-size:10px;">No active questions.</div>';
+
+  } catch(e) {
+    console.error('Open questions error:', e);
+    document.getElementById('questions-list').innerHTML =
+      `<div style="color:var(--red);padding:10px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+}
+</script>
+
+</body>
+</html>
