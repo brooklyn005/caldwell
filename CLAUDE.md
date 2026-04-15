@@ -198,6 +198,7 @@ tick_interval_minutes = 20
 - **Discovery → character state:** `discovery_count` integer field (default 0) added to `Character` model. `_record_discovery_for_character()` in `world_expansion.py` writes a `memory_type="discovery"` memory ("[Name] found [place] — [excerpt]", emotional_weight=0.8) and increments `discovery_count` — called only on confirmed promotions (confidence ≥ 0.9). `social_roles.py`: "pathfinder" and "explorer" added to `_ROLE_DESCRIPTIONS` and `_BEHAVIORAL_ROLE_MAP` (adventurous/restless → pathfinder). `_infer_role` rule: `discovery_count >= 2` → +0.6 pathfinder, +0.3 explorer; `== 1` → +0.3 explorer. Verified: character with `discovery_count=2` inferred as pathfinder on next role pass.
 - **conversation_runner.py — use_count:** After each scene's `Dialogue` row is committed, queries `Location` by `location.name`, increments `use_count` by 1, and commits. Logs a warning (not an error) if the name is not found — tick never crashes. Import aliased as `LocationModel` to avoid shadowing the `location` parameter already in scope.
 - **Dashboard — World Expansion + Pathfinders:** `GET /api/discoveries` endpoint returns all `is_emergent=True` Location rows with `name`, `discovered_by_id`, `discoverer_name`, `discovered_on_day`, `discovery_stage`, `territory_type`, `location_category`, `use_count`, `confidence`. `_char_summary()` in `routes.py` now includes `discovery_count`. Dashboard "🗺 World" tab has two panels: World Expansion (lists emergent locations by sim_day with discoverer name, stage badge, territory badge, use_count bar, highlighted for frontier/outside) and Pathfinders (characters with `discovery_count >= 1`, sorted by count). Both sections load on tab switch — no websocket required.
+- **Human Development & Intimacy Discovery System:** `simulation/epistemology.py` — `CharacterBelief` table accumulates ambiguous sensory signals into beliefs (confusion → tentative → labeled → social_concept). No Instant Understanding rule: signal_count ≥ 2 or source_count ≥ 2 required to advance. `get_belief_prompt_block()` injects beliefs into character system prompts. `simulation/lexicon.py` — `LexiconEntry` table tracks community-coined terms; `get_vocabulary_constraints()` injects forbidden clinical terminology + known coined terms into every prompt; `detect_new_terms_in_exchanges()` scans dialogue for coining patterns post-scene. `LocationMemory` gains `privacy_rating` and `social_taboo_score` — updated by `location_memory.py` after every scene. `simulation/intimacy_spread.py` — detects secret-sharing language in exchanges, propagates degraded beliefs, logs contradictory labeled beliefs to `CivilizationThread` as `contested_knowledge`. `consequence_engine.py` — First-Person rule: first `quiet_intimacy` scene per character gets a `transformative_first_experience` consequence (severity 0.85) that lowers guardedness. `memory_writer.py` — `write_signal_memory_for_witness()` writes ambiguous observation memory and epistemic signal for witnesses. `conversation_runner.py` calls lexicon detection + belief spread after every scene. `GET /api/lexicon`, `GET /api/beliefs`, `GET /api/location_privacy` endpoints added. Dashboard "🧠 Knowledge" tab: Lexicon panel, Beliefs panel, Privacy Map panel.
 - **daily_composer.py**, **consequence_engine.py**, **silent_actions.py**, **transient_state.py**, **social_roles.py**, **location_memory.py**, **daybook.py**, **scene_categorizer.py**, **scene_selector.py**, **pressure_selector.py** — all implemented.
 
 ---
@@ -205,60 +206,6 @@ tick_interval_minutes = 20
 ## Implementation priorities
 
 Execute these one at a time in order. Do not begin the next priority until the current one is verified working. Each priority describes exactly what to do, which files to change, and what done looks like.
-
-### Priority 1 — Human Development & Intimacy Discovery System
-Objective: Implement a system where characters discover, misinterpret, and socially codify private behaviors and human development through ambiguous signals rather than explicit facts.
-
-1. The Epistemic Layer (Belief vs. Fact)
-
-Module: Create simulation/epistemology.py.
-
-Logic: Replace "Global Truths" with a Belief model. A belief has a subject, confidence (0-1), coherence (0-1), and vocabulary_tags.
-
-Detection: In memory_writer.py, when a character witnesses a "private" action, do not record the action name. Record a signal (e.g., "heavy breathing," "rhythmic sound," "locked door").
-
-Evolution: Implement a "Refinement Loop": Repeated signals move a belief from Confusion → Tentative Label → Socially Shared Concept.
-
-2. Naïve Language & Custom Lexicon
-
-Module: Create simulation/lexicon.py.
-
-Functionality: Maintain a WorldDictionary of emergent terms. If characters lack a word for a biological act or body part, the prompt_builder.py must force them to use literal, awkward descriptions (e.g., "the chest-thumping," "the shared-breath").
-
-Prompt Injection: Update prompt_builder.py to inject the character's current limited vocabulary into the system prompt. They are forbidden from using modern clinical or adult terminology until the community "discovers" and labels it.
-
-3. Spatial Social Coding
-
-Location Updates: Modify database/models.py for LocationMemory to include privacy_rating and social_taboo_score.
-
-Behavior: Characters with high "Curiosity" or "Envy" (e.g., Nara, Calla) should gravitate toward "Private" zones to gather signals, while those with high "Order" (Kofi) avoid them.
-
-Transformation: Locations like The Meridian or Lakeview Flats should accumulate "Social Meaning" based on what is overheard there, affecting future scene selection.
-
-4. Witness & Social Transmission
-
-Module: Create simulation/intimacy_spread.py.
-
-Logic: When a character "shares a secret" in a scene, they transmit their Belief (including the errors) to the listener.
-
-Contradiction: If Character A believes "Movement X" is a sickness and Character B believes it is a ritual, the resulting social tension must be logged in CivilizationThread.
-
-5. Dashboard & Cultural Dictionary
-
-Visualization: Update static/dashboard.html to display:
-
-The Lexicon: A table showing "Community Created Words" and their inferred meanings.
-
-Knowledge Heatmap: Which characters "know" (or think they know) about specific private behaviors.
-
-Privacy Map: Visual indicators of which locations are currently coded as "Private" or "Avoided."
-
-6. Implementation Constraints
-
-No Instant Understanding: A character must witness a behavior at least 2 times or hear it from 2 sources before they "label" it.
-
-The "First-Person" Rule: First-time experiences must be coded as "Transformative" in consequence_engine.py, significantly shifting guardedness and attachment scores.
----
 
 ## What NOT to do
 
