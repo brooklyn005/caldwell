@@ -11,6 +11,7 @@ Handles:
 """
 import json
 import logging
+import math
 import random
 import re
 from sqlalchemy.orm import Session
@@ -43,21 +44,25 @@ CLAIM_PATTERNS = [
     r"(?:i live|we live|i stay|we stay) here",
 ]
 
-# Map zones for placing new locations
-# Inside Caldwell — gaps between existing locations
-INSIDE_POSITIONS = [
-    (0.35, 0.25), (0.65, 0.25), (0.15, 0.55),
-    (0.85, 0.55), (0.35, 0.75), (0.65, 0.75),
-    (0.50, 0.15), (0.50, 0.85), (0.20, 0.35),
-]
+# Pixel dimensions of the game map (must match W, H in game.html)
+_MAP_W = 900.0
+_MAP_H = 650.0
+_MIN_DIST_PX = 80.0  # minimum pixel distance between any two locations
 
-# Outside Caldwell — beyond the edges
-OUTSIDE_POSITIONS = [
-    (0.05, 0.30), (0.05, 0.70), (0.95, 0.30),
-    (0.95, 0.70), (0.30, 0.05), (0.70, 0.05),
-    (0.30, 0.95), (0.70, 0.95), (0.02, 0.50),
-    (0.98, 0.50), (0.50, 0.02), (0.50, 0.98),
-]
+# Zone definitions: (xmin, xmax, ymin, ymax) as 0.0–1.0 fractions
+# "inside"   — within current seed map bounds
+# "frontier" — ring just outside seed bounds
+# "outside"  — near the map edges, furthest out
+_ZONE_OUTER = {
+    "inside":   (0.15, 0.85, 0.15, 0.85),
+    "frontier": (0.05, 0.95, 0.05, 0.95),
+    "outside":  (0.02, 0.98, 0.02, 0.98),
+}
+# For ring zones, exclude the inner box
+_ZONE_EXCLUDE = {
+    "frontier": (0.15, 0.85, 0.15, 0.85),
+    "outside":  (0.05, 0.95, 0.05, 0.95),
+}
 
 # Location name generators for discovered spaces
 INSIDE_NAME_TEMPLATES = [
@@ -84,28 +89,80 @@ OUTSIDE_NOUNS = ["Meadow", "Road", "Path", "Ridge", "Creek", "Forest", "Shore", 
 OUTSIDE_ADJS = ["Open", "Distant", "Wide", "Quiet", "Overgrown", "Sunlit", "Windswept"]
 
 
-def _get_used_map_positions(db: Session) -> set[tuple]:
-    """Get all currently used map positions to avoid overlap."""
-    used = set()
-    emergent = db.query(EmergentLocation).all()
-    for e in emergent:
-        if e.map_x and e.map_y:
-            used.add((round(e.map_x, 2), round(e.map_y, 2)))
-    return used
+def _px_dist(ax: float, ay: float, bx: float, by: float) -> float:
+    """Euclidean distance in pixels between two fractional coordinates."""
+    return math.sqrt(((ax - bx) * _MAP_W) ** 2 + ((ay - by) * _MAP_H) ** 2)
 
 
-def _assign_map_position(is_outside: bool, db: Session) -> tuple[float, float]:
-    """Assign a map position for a new location."""
-    used = _get_used_map_positions(db)
-    pool = OUTSIDE_POSITIONS if is_outside else INSIDE_POSITIONS
-    for pos in pool:
-        if pos not in used:
-            return pos
-    # If all slots taken, generate random position in appropriate zone
-    if is_outside:
-        return (random.choice([random.uniform(0, 0.1), random.uniform(0.9, 1.0)]),
-                random.uniform(0.1, 0.9))
-    return (random.uniform(0.2, 0.8), random.uniform(0.2, 0.8))
+def _sample_in_zone(territory_type: str) -> tuple[float, float]:
+    """Return a random (x, y) within the appropriate zone (rejection sampling)."""
+    xmin, xmax, ymin, ymax = _ZONE_OUTER.get(territory_type, _ZONE_OUTER["inside"])
+    exclude = _ZONE_EXCLUDE.get(territory_type)
+    for _ in range(300):
+        x = random.uniform(xmin, xmax)
+        y = random.uniform(ymin, ymax)
+        if exclude:
+            ex0, ex1, ey0, ey1 = exclude
+            if ex0 <= x <= ex1 and ey0 <= y <= ey1:
+                continue  # inside exclusion zone — retry
+        return x, y
+    # Fallback: force into a corner band of the outer box
+    x = random.choice([
+        random.uniform(xmin, xmin + 0.08),
+        random.uniform(xmax - 0.08, xmax),
+    ])
+    y = random.uniform(ymin, ymax)
+    return x, y
+
+
+def assign_map_coordinates(db: Session, territory_type: str = "inside") -> tuple[float, float]:
+    """
+    Pick a collision-free (map_x, map_y) for a new location.
+
+    Zone placement:
+      inside   — within seed map bounds (0.15–0.85 × 0.15–0.85)
+      frontier — ring just outside seed bounds
+      outside  — near map edges
+
+    Up to 50 random attempts; falls back to an expanding spiral if all collide.
+    Guarantees no placement within 80px of any existing location.
+    """
+    occupied = [
+        (loc.map_x, loc.map_y)
+        for loc in db.query(Location).filter(
+            Location.map_x.isnot(None),
+            Location.map_y.isnot(None),
+        ).all()
+    ]
+
+    def no_collision(x: float, y: float) -> bool:
+        return all(_px_dist(x, y, ox, oy) >= _MIN_DIST_PX for ox, oy in occupied)
+
+    # 50 random attempts within the target zone
+    for _ in range(50):
+        x, y = _sample_in_zone(territory_type)
+        if no_collision(x, y):
+            return x, y
+
+    # Spiral fallback — expand outward from zone centre
+    outer = _ZONE_OUTER.get(territory_type, _ZONE_OUTER["inside"])
+    cx = (outer[0] + outer[1]) / 2
+    cy = (outer[2] + outer[3]) / 2
+    step = 0.06
+    for ring in range(1, 50):
+        radius = ring * step
+        n_pts = max(8, ring * 8)
+        for i in range(n_pts):
+            angle = (2 * math.pi * i) / n_pts
+            x = cx + radius * math.cos(angle)
+            y = cy + (radius * _MAP_W / _MAP_H) * math.sin(angle)
+            x = max(0.01, min(0.99, x))
+            y = max(0.01, min(0.99, y))
+            if no_collision(x, y):
+                return x, y
+
+    logger.warning("assign_map_coordinates: no collision-free position found, using random fallback")
+    return (random.uniform(0.05, 0.95), random.uniform(0.05, 0.95))
 
 
 def _generate_location_name(is_outside: bool, discovery_text: str = "") -> str:
@@ -166,30 +223,46 @@ def create_emergent_location(
         return existing
 
     description = _generate_location_description(character, discovery_text, is_outside)
-    map_x, map_y = _assign_map_position(is_outside, db)
+    territory_type = "outside" if is_outside else "inside"
+    map_x, map_y = assign_map_coordinates(db, territory_type)
 
-    # Create the main Location record
+    # Create the Location record with all emergent-world fields
     new_loc = Location(
         name=name,
         description=description,
         capacity=random.randint(3, 8),
         location_type="emergent_outside" if is_outside else "emergent_inside",
+        is_seed=False,
+        is_emergent=True,
+        territory_type=territory_type,
+        discovery_stage="confirmed",
+        discovered_by_id=character.roster_id,
+        discovered_on_day=sim_day,
+        named_by_id=custom_name and character.roster_id or None,
+        discovery_origin=discovery_text[:300],
+        confidence=1.0,
+        map_x=map_x,
+        map_y=map_y,
     )
     db.add(new_loc)
     db.flush()
 
-    # Create the emergent record
-    emergent = EmergentLocation(
-        location_id=new_loc.id,
-        discovered_by_id=character.id,
-        discovery_day=sim_day,
-        discovery_description=discovery_text[:300],
-        is_outside=is_outside,
-        origin_type="discovered" if not custom_name else "named",
-        map_x=map_x,
-        map_y=map_y,
-    )
-    db.add(emergent)
+    # Also create the legacy emergent record for backward compat
+    try:
+        emergent = EmergentLocation(
+            location_id=new_loc.id,
+            discovered_by_id=character.id,
+            discovery_day=sim_day,
+            discovery_description=discovery_text[:300],
+            is_outside=is_outside,
+            origin_type="discovered" if not custom_name else "named",
+            map_x=map_x,
+            map_y=map_y,
+        )
+        db.add(emergent)
+    except Exception:
+        pass  # legacy table may not exist in all deployments
+
     db.commit()
 
     # Move the discovering character there
