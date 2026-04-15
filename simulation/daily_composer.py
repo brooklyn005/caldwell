@@ -38,6 +38,7 @@ from simulation.scene_selector import (
     _cast_scene, _pick_location, _build_scene_context, _cast_second_scene,
 )
 from simulation.pressure_selector import identify_daily_pressures
+from simulation.rhythms import get_due_rhythms, build_rhythm_scene_plan
 
 logger = logging.getLogger("caldwell.composer")
 
@@ -175,10 +176,38 @@ def compose_day(
     locations = db.query(Location).all()
     loc_by_name = {l.name: l for l in locations}
 
+    # ── Check for due rhythms (slot 2 preference) ─────────────────────────
+    due_rhythms = get_due_rhythms(sim_day)
+    rhythm_used = False
+
     # ── Fill required slots ────────────────────────────────────────────────
-    for slot_category in required_slots:
+    for slot_index, slot_category in enumerate(required_slots):
         if len(scenes_built) >= max_scenes - len(injected_plans):
             break
+
+        # Slot 2 (index 1): prefer a rhythm-driven scene if one is due
+        if slot_index == 1 and due_rhythms and not rhythm_used:
+            for rhythm in due_rhythms:
+                if rhythm.scene_type in SLOT_CATEGORIES.get(slot_category, []) or slot_category in ("connection", "ambient"):
+                    rhythm_plan = build_rhythm_scene_plan(
+                        rhythm=rhythm,
+                        sim_day=sim_day,
+                        db=db,
+                        used_char_ids=used_char_ids,
+                        pair_cooldowns=pair_cooldowns,
+                        loc_by_name=loc_by_name,
+                        locations=locations,
+                    )
+                    if rhythm_plan:
+                        scenes_built.append(rhythm_plan)
+                        scene_type_counts[rhythm_plan.scene_type] = scene_type_counts.get(rhythm_plan.scene_type, 0) + 1
+                        used_char_ids.update(c.id for c in rhythm_plan.characters)
+                        if rhythm_plan.location and rhythm_plan.location.name:
+                            location_cooldowns[rhythm_plan.location.name] = location_cooldowns.get(rhythm_plan.location.name, 0) + 1
+                        rhythm_used = True
+                        break
+            if rhythm_used:
+                continue
 
         plan = _fill_slot(
             slot_category=slot_category,
@@ -631,6 +660,15 @@ def _generate_daybook(archetype: str, scenes: list[ScenePlan], sim_day: int) -> 
     scene_types = [s.scene_type for s in scenes]
 
     extras = []
+
+    # Note any rhythm-driven scenes
+    rhythm_names = [
+        s.pressure_type.replace("rhythm_", "").replace("_", " ")
+        for s in scenes if s.pressure_type.startswith("rhythm_")
+    ]
+    if rhythm_names:
+        extras.append(f"The {rhythm_names[0]} came around again. It held.")
+
     if "quiet_intimacy" in scene_types:
         extras.append("Something private is forming between two people.")
     if "ritual" in scene_types:
