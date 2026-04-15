@@ -197,6 +197,7 @@ tick_interval_minutes = 20
 - **world_expansion.py — multi-source discovery detection:** `DiscoveryCandidate` table added to `database/models.py` (`name_hint`, `confidence`, `source_ids_json`, `source_types_json`, `territory_type`, `sim_day`, `promoted_to_location_id`). Signal extraction via `_extract_location_hints()` (requires exploration phrase + no metaphor match) against `_LOCATION_KEYWORDS` list (30 terms). `_METAPHOR_BLOCKLIST` blocks "beyond my reach", "lost in thought", "found myself", "clearing my head", etc. `_upsert_candidate()` accumulates confidence by distinct source type count: 1→0.3, 2→0.6, 3+→0.9. `scan_for_discoveries()` now scans 4 sources: action memories, feeling/monologue memories, scene dialogue exchanges, silent action descriptions. Candidates at confidence ≥ 0.6 promoted to tentative Location; ≥ 0.9 to confirmed. Verified: single action memory → candidate at 0.3; second silent_action signal → confidence 0.6, tentative Location created.
 - **Discovery → character state:** `discovery_count` integer field (default 0) added to `Character` model. `_record_discovery_for_character()` in `world_expansion.py` writes a `memory_type="discovery"` memory ("[Name] found [place] — [excerpt]", emotional_weight=0.8) and increments `discovery_count` — called only on confirmed promotions (confidence ≥ 0.9). `social_roles.py`: "pathfinder" and "explorer" added to `_ROLE_DESCRIPTIONS` and `_BEHAVIORAL_ROLE_MAP` (adventurous/restless → pathfinder). `_infer_role` rule: `discovery_count >= 2` → +0.6 pathfinder, +0.3 explorer; `== 1` → +0.3 explorer. Verified: character with `discovery_count=2` inferred as pathfinder on next role pass.
 - **conversation_runner.py — use_count:** After each scene's `Dialogue` row is committed, queries `Location` by `location.name`, increments `use_count` by 1, and commits. Logs a warning (not an error) if the name is not found — tick never crashes. Import aliased as `LocationModel` to avoid shadowing the `location` parameter already in scope.
+- **Dashboard — World Expansion + Pathfinders:** `GET /api/discoveries` endpoint returns all `is_emergent=True` Location rows with `name`, `discovered_by_id`, `discoverer_name`, `discovered_on_day`, `discovery_stage`, `territory_type`, `location_category`, `use_count`, `confidence`. `_char_summary()` in `routes.py` now includes `discovery_count`. Dashboard "🗺 World" tab has two panels: World Expansion (lists emergent locations by sim_day with discoverer name, stage badge, territory badge, use_count bar, highlighted for frontier/outside) and Pathfinders (characters with `discovery_count >= 1`, sorted by count). Both sections load on tab switch — no websocket required.
 - **daily_composer.py**, **consequence_engine.py**, **silent_actions.py**, **transient_state.py**, **social_roles.py**, **location_memory.py**, **daybook.py**, **scene_categorizer.py**, **scene_selector.py**, **pressure_selector.py** — all implemented.
 
 ---
@@ -204,26 +205,6 @@ tick_interval_minutes = 20
 ## Implementation priorities
 
 Execute these one at a time in order. Do not begin the next priority until the current one is verified working. Each priority describes exactly what to do, which files to change, and what done looks like.
-
----
-
-### PRIORITY 1 — Expose discovery history and evolution indicators on the dashboard
-
-**Files to change:** `static/dashboard.html`, `api/routes.py`
-
-Add `GET /api/discoveries` returning all `Location` rows where `is_emergent = True`, ordered by `discovered_on_day` descending. Include: `name`, `discovered_by_id`, `discovered_on_day`, `discovery_stage`, `territory_type`, `location_category`, `use_count`, `confidence`.
-
-Add a "World Expansion" section to `dashboard.html` that:
-- Lists discovered locations by sim_day with discoverer name
-- Shows current discovery stage and territory type
-- Shows use_count as a number or simple bar
-- Highlights locations with `territory_type` of frontier or outside
-
-Add a "Pathfinders" section listing characters with `discovery_count >= 1` and their total discovery count.
-
-Both sections update on page refresh — no websocket requirement for this priority.
-
-**Done when:** After seeding one or two manually created emergent locations, the dashboard "World Expansion" section displays them correctly with discoverer name and discovery stage.
 
 ---
 
