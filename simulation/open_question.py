@@ -10,7 +10,7 @@ DESIGN:
 """
 import logging
 from sqlalchemy.orm import Session
-from database.models import Character, OpenQuestion, CharacterRelationship
+from database.models import Character, OpenQuestion, CharacterRelationship, Memory
 from simulation.ai_caller import call_scoring_model
 from simulation.cost_tracker import CostTracker
 
@@ -329,6 +329,7 @@ async def check_resolution(
                     question.resolved = True
                     question.resolved_day = sim_day
                     question.resolution_text = "Faded — never surfaced"
+                    _write_forgotten_memory(character.id, question, sim_day, db)
             # If stuck in intermediary loop, push toward source by decaying
             if question.source_type == "intermediary_partial":
                 question.intensity = max(0.0, question.intensity - 0.1)
@@ -477,6 +478,7 @@ def decay_questions_for_idle(character_id: int, sim_day: int, db: Session):
             q.resolved = True
             q.resolved_day = sim_day
             q.resolution_text = "Faded — never revisited"
+            _write_forgotten_memory(character_id, q, sim_day, db)
     db.commit()
 
 
@@ -613,6 +615,200 @@ def get_question_driven_pressure(sim_day: int, db: Session) -> dict | None:
         }
 
     return None
+
+
+# ── Pruning ───────────────────────────────────────────────────────────────────
+
+# A question unsurfaced for this many days with low intensity is abandoned
+_ABANDON_DAYS = 10
+_ABANDON_INTENSITY_THRESHOLD = 0.35
+
+
+def prune_open_questions(sim_day: int, db: Session) -> None:
+    """
+    Tick-level pruning entry point. Call once per tick after scenes run.
+    Handles:
+    1. Age-based abandonment — questions unsurfaced too long at low intensity
+    2. Semantic redundancy — merge near-duplicate questions per character
+    """
+    _prune_aged(sim_day, db)
+    _prune_redundant(sim_day, db)
+
+
+def _prune_aged(sim_day: int, db: Session) -> None:
+    """
+    Drop questions that have been unsurfaced for too long at low intensity.
+    Writes a 'forgotten' memory for each — the character stopped wondering.
+    """
+    stale = db.query(OpenQuestion).filter(
+        OpenQuestion.resolved == False,
+        OpenQuestion.dropped == False,
+        OpenQuestion.intensity < _ABANDON_INTENSITY_THRESHOLD,
+        OpenQuestion.last_surfaced_day <= sim_day - _ABANDON_DAYS,
+    ).all()
+
+    for q in stale:
+        q.dropped = True
+        q.resolved = True
+        q.resolved_day = sim_day
+        q.resolution_text = "Abandoned — faded without answer"
+        _write_forgotten_memory(q.character_id, q, sim_day, db)
+        logger.info(
+            f"  ABANDONED (age): char={q.character_id} "
+            f"q='{q.question_text[:55]}'"
+        )
+
+    if stale:
+        try:
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Aged pruning commit failed: {e}")
+            db.rollback()
+
+
+def _prune_redundant(sim_day: int, db: Session) -> None:
+    """
+    Per-character: merge semantically redundant active questions.
+    Keeps the one with higher intensity; drops the other (no forgotten memory —
+    it merged, not faded).
+    """
+    # Get all characters with 2+ active questions
+    from sqlalchemy import func
+    char_ids_with_multiple = (
+        db.query(OpenQuestion.character_id)
+        .filter(OpenQuestion.resolved == False, OpenQuestion.dropped == False)
+        .group_by(OpenQuestion.character_id)
+        .having(func.count(OpenQuestion.id) >= 2)
+        .all()
+    )
+
+    changed = False
+    for (char_id,) in char_ids_with_multiple:
+        active = db.query(OpenQuestion).filter(
+            OpenQuestion.character_id == char_id,
+            OpenQuestion.resolved == False,
+            OpenQuestion.dropped == False,
+        ).order_by(OpenQuestion.intensity.desc()).all()
+
+        dropped_ids = set()
+        for i, qa in enumerate(active):
+            if qa.id in dropped_ids:
+                continue
+            for qb in active[i + 1:]:
+                if qb.id in dropped_ids:
+                    continue
+                if _overlap_similar(qa.question_text, qb.question_text):
+                    # Merge qb into qa: keep qa (higher intensity), absorb qb's intensity
+                    qa.intensity = min(1.0, qa.intensity + qb.intensity * 0.3)
+                    qb.dropped = True
+                    qb.resolved = True
+                    qb.resolved_day = sim_day
+                    qb.resolution_text = f"Merged into: {qa.question_text[:60]}"
+                    dropped_ids.add(qb.id)
+                    changed = True
+                    logger.info(
+                        f"  MERGED: char={char_id} "
+                        f"'{qb.question_text[:45]}' → '{qa.question_text[:45]}'"
+                    )
+
+    if changed:
+        try:
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Redundancy pruning commit failed: {e}")
+            db.rollback()
+
+
+def _write_forgotten_memory(character_id: int, question: OpenQuestion, sim_day: int, db: Session) -> None:
+    """
+    Writes a first-person memory when a question fades without resolution.
+    The character stopped wondering — that itself is worth recording.
+    """
+    # Extract the core subject of the question for a natural sentence
+    q_text = question.question_text.strip().rstrip("?.")
+    # Strip leading "Why did", "What does", "I wonder" etc. for brevity
+    for prefix in ("i wonder ", "i keep wondering ", "i need to know ", "i want to know "):
+        if q_text.lower().startswith(prefix):
+            q_text = q_text[len(prefix):]
+            break
+
+    memory_text = (
+        f"I used to wonder: {q_text.lower()}. "
+        f"At some point I stopped asking. "
+        f"I don't know if I'll ever find out."
+    )
+
+    try:
+        db.add(Memory(
+            character_id=character_id,
+            sim_day=sim_day,
+            memory_type="observation",
+            content=memory_text,
+            emotional_weight=0.4,
+            is_inception=False,
+        ))
+    except Exception as e:
+        logger.warning(f"Forgotten memory write failed for char {character_id}: {e}")
+
+
+def _overlap_similar(a: str, b: str) -> bool:
+    """
+    Returns True if two question strings share enough meaningful words
+    to be considered redundant. Used for periodic merging (distinct from
+    _similar() which uses sliding-window chunks at creation time).
+
+    Two questions are merged when they share the same named subject (a proper
+    noun) and have overall keyword overlap >= 0.30 Jaccard. This catches
+    near-synonymous restatements like "Why does Kofi avoid X" / "What makes
+    Kofi stay away from X" while not merging distinct questions about the
+    same person.
+    """
+    SKIP = {
+        "why", "what", "how", "did", "does", "is", "are", "was", "were",
+        "the", "a", "an", "to", "of", "in", "at", "for", "and", "or",
+        "that", "this", "his", "her", "their", "my", "i", "he", "she",
+        "they", "it", "so", "but", "when", "if", "do", "not", "with",
+        "just", "him", "them", "who", "me", "we", "our", "be", "can",
+        "has", "had", "have", "know", "said", "still", "about", "even",
+        "from", "keep", "kept", "seem", "make", "made", "keep", "keeps",
+        "going", "doing", "always", "never", "really", "something",
+    }
+
+    def keywords(text: str) -> set:
+        return {
+            w.strip("?.,!\"'").lower()
+            for w in text.split()
+            if len(w) > 3 and w.strip("?.,!\"'").lower() not in SKIP
+        }
+
+    def proper_nouns(text: str) -> set:
+        """Capitalized words (likely character names) in the question."""
+        return {
+            w.strip("?.,!\"'")
+            for w in text.split()
+            if w and w[0].isupper() and len(w) > 2
+            and w.lower() not in {"why", "what", "how", "when", "where", "this", "that"}
+        }
+
+    a_words = keywords(a)
+    b_words = keywords(b)
+
+    if not a_words or not b_words:
+        return False
+
+    overlap = len(a_words & b_words)
+    union = len(a_words | b_words)
+    jaccard = overlap / union if union else 0.0
+
+    if jaccard >= 0.30:
+        return True
+
+    # Also merge if they share a proper noun AND have at least 1 other keyword match
+    shared_names = proper_nouns(a) & proper_nouns(b)
+    if shared_names and overlap >= 2:
+        return True
+
+    return False
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

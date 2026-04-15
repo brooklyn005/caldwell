@@ -52,6 +52,7 @@ from simulation.silent_actions import generate_daily_silent_actions
 from simulation.transient_state import update_all_transient_states
 from simulation.daybook import generate_reader_summary
 from simulation.social_spread import propagate_scene_aftermath
+from simulation.open_question import prune_open_questions
 
 logger = logging.getLogger("caldwell.engine")
 
@@ -343,6 +344,12 @@ class SimulationEngine:
             generate_daily_silent_actions(sim_day, self.db)
         except Exception as e:
             logger.warning(f"Silent actions failed: {e}")
+
+        # ── Open question pruning ─────────────────────────────────────────────
+        try:
+            prune_open_questions(sim_day, self.db)
+        except Exception as e:
+            logger.warning(f"Open question pruning failed: {e}")
 
         # ── Social role updates (every 7 days) ───────────────────────────────
         if sim_day % 7 == 0:
