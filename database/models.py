@@ -646,3 +646,216 @@ class OpenQuestion(Base):
     intermediary_count = Column(Integer, default=0)
     # How many intermediary partial conversations have happened
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Silent Actions ────────────────────────────────────────────────────────────
+
+class SilentAction(Base):
+    """
+    Off-screen activity: what characters do when not in a scene.
+    Generates memories and minor resource effects without dialogue.
+    """
+    __tablename__ = "silent_actions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sim_day = Column(Integer, nullable=False)
+    actor_ids_json = Column(Text, default="[]")          # JSON list of roster_ids
+    action_type = Column(String(64), nullable=False)
+    location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
+    description = Column(Text, nullable=False)
+    resource_delta = Column(Float, default=0.0)          # effect on food pool
+    visibility = Column(String(16), default="private")   # private or witnessed
+    witness_ids_json = Column(Text, default="[]")        # JSON list of roster_ids
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def actor_ids(self):
+        return json.loads(self.actor_ids_json or "[]")
+
+
+# ── Consequence Records ───────────────────────────────────────────────────────
+
+class ConsequenceRecord(Base):
+    """
+    One record per scene consequence. Persists what actually changed as a
+    result of a scene — relationships, norms, emotional residue, etc.
+    """
+    __tablename__ = "consequence_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sim_day = Column(Integer, nullable=False)
+    source_type = Column(String(32), default="scene")    # scene, biology, norm
+    consequence_type = Column(String(64), nullable=False)
+    # norm_reinforced, emotional_residue, knowledge_gained, public_exposure, etc.
+    affected_ids_json = Column(Text, default="[]")       # JSON list of roster_ids
+    location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
+    description = Column(Text, nullable=False)
+    severity = Column(Float, default=0.5)                # 0-1
+    persistence = Column(Integer, default=7)             # days this consequence remains active
+    reader_visible = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def affected_ids(self):
+        return json.loads(self.affected_ids_json or "[]")
+
+
+# ── Civilization Threads ──────────────────────────────────────────────────────
+
+class CivilizationThread(Base):
+    """
+    Active narrative threads — relationships, rivalries, rituals, mysteries.
+    Tracks ongoing story arcs that span multiple days and scenes.
+    """
+    __tablename__ = "civilization_threads"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_type = Column(String(32), nullable=False)
+    # romance, rivalry, role_emergence, ritual_formation, authority_shift, mystery
+    title = Column(String(128), nullable=False)
+    description = Column(Text, nullable=True)
+    participant_ids_json = Column(Text, default="[]")    # JSON list of roster_ids
+    heat = Column(Float, default=0.5)                    # 0-1, intensity of thread
+    status = Column(String(32), default="active")
+    # active, intensifying, dormant, resolved, faded
+    origin_day = Column(Integer, nullable=False)
+    last_advanced_day = Column(Integer, nullable=True)
+    advance_count = Column(Integer, default=1)
+    resolved_day = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def participant_ids(self):
+        return json.loads(self.participant_ids_json or "[]")
+
+
+# ── Character Transient State ─────────────────────────────────────────────────
+
+class CharacterTransientState(Base):
+    """
+    One row per character per day — their current emotional weather.
+    Derived each tick from disposition, biology, and recent consequences.
+    Injected into system prompts to shape that day's behavior.
+    """
+    __tablename__ = "character_transient_states"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    character_id = Column(Integer, ForeignKey("characters.id"), nullable=False)
+    sim_day = Column(Integer, nullable=False)
+    emotional_tags_json = Column(Text, default="[]")     # JSON list of tag strings
+    hunger_level = Column(Float, default=4.0)            # mirrors biology.hunger
+    fatigue_level = Column(Float, default=3.0)           # mirrors biology.fatigue
+    shame_active = Column(Boolean, default=False)
+    guardedness = Column(Float, default=0.3)             # 0-1
+    loneliness = Column(Float, default=0.3)              # 0-1
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def emotional_tags(self):
+        return json.loads(self.emotional_tags_json or "[]")
+
+    @emotional_tags.setter
+    def emotional_tags(self, val):
+        self.emotional_tags_json = json.dumps(val)
+
+
+# ── Day Composition ───────────────────────────────────────────────────────────
+
+class DayComposition(Base):
+    """
+    One row per tick — records the day's archetype, planned scene slots,
+    and what actually ran. Source of truth for daybook generation.
+    """
+    __tablename__ = "day_compositions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sim_day = Column(Integer, nullable=False)
+    day_archetype = Column(String(64), nullable=True)    # hungry_day, tension_day, etc.
+    day_label = Column(String(128), nullable=True)       # human-readable label
+    required_slots_json = Column(Text, default="[]")     # planned slot categories
+    actual_scenes_json = Column(Text, default="[]")      # scene types that ran
+    suppressed_pressures_json = Column(Text, default="[]")
+    pair_cooldowns_json = Column(Text, default="{}")
+    daybook_text = Column(Text, nullable=True)           # prose summary of the day
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Reader Summary ────────────────────────────────────────────────────────────
+
+class ReaderSummary(Base):
+    """
+    One row per day — the assembled reader-facing view of what happened.
+    Combines daybook prose, active threads, character arcs, and place updates.
+    """
+    __tablename__ = "reader_summaries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sim_day = Column(Integer, unique=True, nullable=False)
+    daybook = Column(Text, nullable=True)                # prose paragraph
+    active_threads_json = Column(Text, default="[]")
+    shifting_roles_json = Column(Text, default="[]")
+    consequences_json = Column(Text, default="[]")
+    place_updates_json = Column(Text, default="[]")
+    character_arcs_json = Column(Text, default="[]")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Social Roles ──────────────────────────────────────────────────────────────
+
+class SocialRole(Base):
+    """
+    One row per character — their emergent social role within the community.
+    Updated every 7 sim days from behavioral evidence. Injected into prompts
+    when confidence is high enough to be publicly visible.
+    """
+    __tablename__ = "social_roles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    character_id = Column(Integer, ForeignKey("characters.id"), unique=True, nullable=False)
+    primary_role = Column(String(64), nullable=True)
+    # teacher, guardian, caretaker, truth_teller, chronicler, etc.
+    secondary_role = Column(String(64), nullable=True)
+    role_confidence = Column(Float, default=0.0)         # 0-1, evidence strength
+    public_visibility = Column(Float, default=0.0)       # 0-1, how visible this role is
+    public_reputation = Column(Text, nullable=True)      # natural-language phrase
+    emerged_day = Column(Integer, nullable=True)
+    last_reinforced_day = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Location Memory ───────────────────────────────────────────────────────────
+
+class LocationMemory(Base):
+    """
+    One row per location — accumulated social personality of each place.
+    Updated after every scene that occurs there. Injected into scene prompts
+    to give characters a sense of the space's history and charge.
+    """
+    __tablename__ = "location_memories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    location_id = Column(Integer, ForeignKey("locations.id"), unique=True, nullable=False)
+    first_recorded_day = Column(Integer, nullable=True)
+    scene_counts_json = Column(Text, default="{}")       # {scene_type: count}
+    identity_tags_json = Column(Text, default="[]")      # emergent identity tags
+    dominant_mood = Column(String(64), nullable=True)
+    privacy_score = Column(Float, nullable=True)         # 0-1
+    charge_level = Column(Float, nullable=True)          # 0-1, emotional intensity
+    significant_events_json = Column(Text, default="[]") # [{day, summary}, ...]
+    last_notable_event = Column(Text, nullable=True)
+    last_notable_day = Column(Integer, nullable=True)
+    who_controls = Column(String(64), nullable=True)     # roster_id of dominant character
+    who_avoids = Column(Text, default="[]")              # JSON list of roster_ids
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    @property
+    def scene_counts(self):
+        return json.loads(self.scene_counts_json or "{}")
+
+    @property
+    def identity_tags(self):
+        return json.loads(self.identity_tags_json or "[]")
+
+    @identity_tags.setter
+    def identity_tags(self, val):
+        self.identity_tags_json = json.dumps(val)

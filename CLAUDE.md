@@ -154,38 +154,9 @@ tick_interval_minutes = 20
 
 ---
 
-## BLOCKING ISSUE — must fix before anything else will run
-
-**The simulation will crash on tick 1.** Seven new model classes are imported by the simulation code but do not exist in `database/models.py` and therefore the tables do not exist in `caldwell.db`.
-
-### Missing classes (add to `database/models.py`)
-
-| Class name | Table name | Referenced by |
-|------------|------------|---------------|
-| `ConsequenceRecord` | `consequence_records` | consequence_engine.py, transient_state.py, daybook.py |
-| `CivilizationThread` | `civilization_threads` | consequence_engine.py, daybook.py |
-| `CharacterTransientState` | `character_transient_states` | transient_state.py, daybook.py |
-| `DayComposition` | `day_compositions` | daily_composer.py, daybook.py |
-| `ReaderSummary` | `reader_summaries` | daybook.py |
-| `SocialRole` | `social_roles` | social_roles.py, daybook.py, engine.py |
-| `LocationMemory` | `location_memories` | location_memory.py, daybook.py |
-
-After adding models, run `reset_and_seed.py` to recreate the database with the new schema (it drops and rebuilds). The DB has 0 ticks of history so no data will be lost.
-
-### How each new table is used (infer fields from the modules that import them)
-
-- **ConsequenceRecord**: stores one record per scene consequence. Fields: `sim_day`, `scene_id`, `consequence_type` (physical/social/personal), `affected_entity_ids_json`, `description`, `severity` (0-1), `persistence` (days), `reader_visible` (bool), `created_at`
-- **CivilizationThread**: tracks active narrative threads. Fields: `theme`, `participant_ids_json`, `origin_day`, `status` (active/resolved/faded), `heat` (0-1 intensity), `last_advanced_day`, `resolved_day`, `description`
-- **CharacterTransientState**: one row per character per day. Fields: `character_id` (FK), `sim_day`, `emotional_tags_json` (list of tag strings), `guardedness` (0-1), `fatigue` (0-1), `hunger` (0-1), `stress_load` (0-1), `notes`
-- **DayComposition**: one row per tick. Fields: `sim_day`, `day_archetype` (string), `day_label` (string), `slots_json` (list of slot assignments), `actual_scenes_json`, `daybook_text` (paragraph), `created_at`
-- **ReaderSummary**: one row per day. Fields: `sim_day`, `daybook` (text paragraph), `active_threads_json`, `shifting_roles_json`, `consequences_json`, `place_updates_json`, `character_arcs_json`, `created_at`
-- **SocialRole**: one row per character-role pair. Fields: `character_id` (FK), `role_type` (string), `confidence` (0-1), `start_day`, `last_reinforced_day`, `public_visibility` (bool), `source_evidence_json`
-- **LocationMemory**: one row per location. Fields: `location_id` (FK, unique), `mood` (string), `typical_activities_json`, `control_character_id` (nullable FK), `avoided_by_ids_json`, `emotional_residue_json`, `charge` (0-1), `last_event` (text), `last_updated_day`
-
----
-
 ## What is already implemented — do not rebuild
 
+- `database/models.py` — all 8 schema tables added and verified: `ConsequenceRecord`, `CivilizationThread`, `CharacterTransientState`, `DayComposition`, `ReaderSummary`, `SocialRole`, `LocationMemory`, `SilentAction`. Schema rebuilt via `reset_and_seed.py`. Two ticks ran clean.
 - `daily_composer.py` — Day Composition Engine with slot categories, day archetypes, pair cooldowns, caps
 - `consequence_engine.py` — rule-based consequence generation, no API calls
 - `silent_actions.py` — off-screen activity layer
@@ -200,36 +171,33 @@ After adding models, run `reset_and_seed.py` to recreate the database with the n
 
 ## Implementation priorities (in order)
 
-### Priority 1 — Fix the schema (BLOCKING)
-Add the 7 missing model classes to `database/models.py`. Follow the existing SQLAlchemy 2.0 declarative style exactly. Then run `reset_and_seed.py`.
-
-### Priority 2 — Wire transient state into prompt_builder.py
+### Priority 1 — Wire transient state into prompt_builder.py
 `transient_state.py` generates emotional state data each tick, but `prompt_builder.py` does not yet inject it into character system prompts. The transient state for a character should appear as a concrete paragraph near the top of the system prompt, after character description and before memories. Pull from the `CharacterTransientState` table for the current `sim_day`.
 
-### Priority 3 — Open question pruning and decay
+### Priority 2 — Open question pruning and decay
 `open_question.py` has per-tick decay but no pruning for:
 - Semantically redundant questions (merge similar ones)
 - Age-based abandonment (drop after N days unsurfaced, convert to rumor memory)
 - "Forgotten" resolution path (question fades without explicit answer — just write a memory that the character stopped wondering)
 
-### Priority 4 — Recurring rhythms module
+### Priority 3 — Recurring rhythms module
 No file exists for this. Create `simulation/rhythms.py`. The module should maintain a small table of scheduled recurring community activities (hunt day, washing day, storytelling night, food-sorting day, etc.) that cycle on predictable intervals. Each rhythm: a name, a cadence (every N days), a location affinity, which characters typically participate, and a note on what norm it reinforces. The daily_composer should check the rhythms table when composing slot 2 (connection/care/labor/ambient) and prefer a rhythm-driven scene if one is due.
 
-### Priority 5 — Social spread and witness mechanics
+### Priority 4 — Social spread and witness mechanics
 After a high-intensity scene (argument, status_challenge, quiet_intimacy), witnesses and bystanders should get memory fragments of distorted versions. Create a `propagate_scene_aftermath(scene, participants, location, sim_day, db)` function in a new `simulation/social_spread.py`. It should:
 - Identify characters present at that location who were NOT scene participants
 - Write a short distorted memory to each witness (1-2 sentences, first-person observation)
 - Optionally escalate to a "rumor" memory for characters who hear secondhand the next day
 - Weight distortion by relationship tension between witness and participants
 
-### Priority 6 — Player-facing API endpoints
+### Priority 5 — Player-facing API endpoints
 `daybook.py` generates `ReaderSummary` records but nothing serves them to a frontend. Add routes to `api/` (FastAPI):
 - `GET /summary/today` — return today's ReaderSummary as JSON
 - `GET /summary/{sim_day}` — return a specific day's summary
 - `GET /characters` — return all living characters with current role and transient state
 - `GET /locations` — return all locations with their LocationMemory
 
-### Priority 7 — Embodied scene directive (deeper prompt wiring)
+### Priority 6 — Embodied scene directive (deeper prompt wiring)
 `scene_builder.py` generates good physical context. `prompt_builder.py` needs to use it more aggressively. The scene frame should establish: who is standing where, what their hands are doing, what the light and smell is. Characters should not speak until after a physical action beat. This means the first message in a scene should come from the engine (not the character) as a brief scene-setting paragraph, then char_a speaks into that environment.
 
 ---
@@ -240,7 +208,7 @@ After a high-intensity scene (argument, status_challenge, quiet_intimacy), witne
 - Do not add API calls to `consequence_engine.py`, `daily_composer.py`, `silent_actions.py`, `transient_state.py`, `daybook.py`, `social_roles.py`, or `location_memory.py` — these are intentionally rule-based and must stay free of API cost
 - Do not change the `ai_mode` or model routing in `ai_caller.py` unless explicitly asked
 - Do not touch `reset_and_seed.py` logic except to add `db.create_all()` calls for new tables
-- Do not enable group conversations (`group_conversations_per_tick` stays 0) until the schema issue is resolved and tested
+- Do not enable group conversations (`group_conversations_per_tick` stays 0) — keep disabled until explicitly prioritized
 - Do not write long scaffold comments — this codebase uses short docstrings and inline comments only
 - Do not rename roster IDs — they are primary keys referenced across tables
 - Central Square is intentionally throttled to 2 scenes/day — do not remove that cap
@@ -280,8 +248,7 @@ uvicorn main:app --reload
 
 ## Database current state
 
-- 17 characters seeded, 0 ticks run
+- 17 characters seeded, 2 ticks run (verified clean)
 - 12 locations seeded
-- All legacy tables exist (`characters`, `locations`, `memories`, `dialogues`, `relationships`, etc.)
-- The 7 new tables listed in the BLOCKING ISSUE section do not exist yet
-- `caldwell.db` can be wiped and reseeded at any time — no history to preserve
+- All tables exist and are current — full schema including `consequence_records`, `civilization_threads`, `character_transient_states`, `day_compositions`, `reader_summaries`, `social_roles`, `location_memories`, `silent_actions`
+- `caldwell.db` can be wiped and reseeded at any time via `reset_and_seed.py`
