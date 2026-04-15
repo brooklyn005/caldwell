@@ -157,6 +157,7 @@ tick_interval_minutes = 20
 ## What is already implemented — do not rebuild
 
 - `database/models.py` — all 8 schema tables added and verified: `ConsequenceRecord`, `CivilizationThread`, `CharacterTransientState`, `DayComposition`, `ReaderSummary`, `SocialRole`, `LocationMemory`, `SilentAction`. Schema rebuilt via `reset_and_seed.py`. Two ticks ran clean.
+- `prompt_builder.py` — transient emotional state injected into character system prompts via `get_transient_state_for_prompt()`. Block appears after memories, before current-moment section. Also added `hope_active` and `obsession_text` to `CharacterTransientState` (were referenced in the function but missing from the model).
 - `daily_composer.py` — Day Composition Engine with slot categories, day archetypes, pair cooldowns, caps
 - `consequence_engine.py` — rule-based consequence generation, no API calls
 - `silent_actions.py` — off-screen activity layer
@@ -171,33 +172,30 @@ tick_interval_minutes = 20
 
 ## Implementation priorities (in order)
 
-### Priority 1 — Wire transient state into prompt_builder.py
-`transient_state.py` generates emotional state data each tick, but `prompt_builder.py` does not yet inject it into character system prompts. The transient state for a character should appear as a concrete paragraph near the top of the system prompt, after character description and before memories. Pull from the `CharacterTransientState` table for the current `sim_day`.
-
-### Priority 2 — Open question pruning and decay
+### Priority 1 — Open question pruning and decay
 `open_question.py` has per-tick decay but no pruning for:
 - Semantically redundant questions (merge similar ones)
 - Age-based abandonment (drop after N days unsurfaced, convert to rumor memory)
 - "Forgotten" resolution path (question fades without explicit answer — just write a memory that the character stopped wondering)
 
-### Priority 3 — Recurring rhythms module
+### Priority 2 — Recurring rhythms module
 No file exists for this. Create `simulation/rhythms.py`. The module should maintain a small table of scheduled recurring community activities (hunt day, washing day, storytelling night, food-sorting day, etc.) that cycle on predictable intervals. Each rhythm: a name, a cadence (every N days), a location affinity, which characters typically participate, and a note on what norm it reinforces. The daily_composer should check the rhythms table when composing slot 2 (connection/care/labor/ambient) and prefer a rhythm-driven scene if one is due.
 
-### Priority 4 — Social spread and witness mechanics
+### Priority 3 — Social spread and witness mechanics
 After a high-intensity scene (argument, status_challenge, quiet_intimacy), witnesses and bystanders should get memory fragments of distorted versions. Create a `propagate_scene_aftermath(scene, participants, location, sim_day, db)` function in a new `simulation/social_spread.py`. It should:
 - Identify characters present at that location who were NOT scene participants
 - Write a short distorted memory to each witness (1-2 sentences, first-person observation)
 - Optionally escalate to a "rumor" memory for characters who hear secondhand the next day
 - Weight distortion by relationship tension between witness and participants
 
-### Priority 5 — Player-facing API endpoints
+### Priority 4 — Player-facing API endpoints
 `daybook.py` generates `ReaderSummary` records but nothing serves them to a frontend. Add routes to `api/` (FastAPI):
 - `GET /summary/today` — return today's ReaderSummary as JSON
 - `GET /summary/{sim_day}` — return a specific day's summary
 - `GET /characters` — return all living characters with current role and transient state
 - `GET /locations` — return all locations with their LocationMemory
 
-### Priority 6 — Embodied scene directive (deeper prompt wiring)
+### Priority 5 — Embodied scene directive (deeper prompt wiring)
 `scene_builder.py` generates good physical context. `prompt_builder.py` needs to use it more aggressively. The scene frame should establish: who is standing where, what their hands are doing, what the light and smell is. Characters should not speak until after a physical action beat. This means the first message in a scene should come from the engine (not the character) as a brief scene-setting paragraph, then char_a speaks into that environment.
 
 ---
