@@ -190,6 +190,7 @@ tick_interval_minutes = 20
 - **scene_builder.py:** `build_embodied_scene_frame()` — 12 scene types × 12 locations produce a physical narrator paragraph injected as the first exchange in every conversation.
 - **Location model (database/models.py):** 15 emergent-world columns added: `is_seed`, `is_emergent`, `discovery_origin`, `discovered_by_id`, `discovered_on_day`, `named_by_id`, `confidence`, `discovery_stage`, `location_category`, `territory_type`, `danger_level`, `claim_character_id`, `use_count`, `map_x`, `map_y`. All 12 seed locations seeded with `is_seed=True`, `discovery_stage="confirmed"`, `territory_type="inside"`, `confidence=1.0`, and coordinates matching `LOCATION_LAYOUT` in `game.html` (stored as 0.0–1.0 fractions). `data/locations_data.py` refactored with `_loc()` helper and `_SEED_COORDS` dict. Schema verified clean via `reset_and_seed.py --confirm`.
 - **GET /api/world_map:** Returns a flat JSON array of all `Location` rows with all 15 emergent-world fields. Replaced the stale prior handler (which read from the old `EmergentLocation` join table). All 12 seed locations return with coordinates and `is_seed=true`. Existing `/api/locations` endpoint untouched.
+- **game.html — live world map:** `LOCATION_LAYOUT` removed. `LOCATION_STYLE` retains visual-only fields (`w`, `h`, `color`) per named location. `locationNodes` (keyed by name) is populated at scene load by fetching `/api/world_map`. `create()` is async and awaits `loadWorldMap()` before `drawMap()`. `spawnCharacter()` and `moveCharacter()` warn and skip on unknown locations — no silent Central Square fallback. Heatmap renderer uses `locationNodes` for coordinates and `LOCATION_STYLE` for size. Emergent locations render with a distinct tint.
 - **daily_composer.py**, **consequence_engine.py**, **silent_actions.py**, **transient_state.py**, **social_roles.py**, **location_memory.py**, **daybook.py**, **scene_categorizer.py**, **scene_selector.py**, **pressure_selector.py** — all implemented.
 
 ---
@@ -200,17 +201,7 @@ Execute these one at a time in order. Do not begin the next priority until the c
 
 ---
 
-### PRIORITY 1 — Replace hardcoded LOCATION_LAYOUT in game.html with live /api/world_map data
-
-**Files to change:** `static/game.html`
-
-On scene load, fetch `/api/world_map` and build a `locationNodes` object keyed by location name (with id as a fallback). Each node must carry: `x`, `y`, `name`, `id`, `is_emergent`, `territory_type`. Replace all references to the hardcoded `LOCATION_LAYOUT` with lookups against `locationNodes`. Update `spawnCharacter()` and `moveCharacter()` to use `locationNodes`. If a location is not found in `locationNodes`, log a browser console warning and skip the move — do not silently fall back to Central Square. The visual rendering of seed locations must be identical to the current behavior after this change.
-
-**Done when:** The map renders correctly from live data, character movement works for all 12 seed locations, and no `LOCATION_LAYOUT` references remain in `game.html`.
-
----
-
-### PRIORITY 2 — Handle location_discovered websocket events in game.html
+### PRIORITY 1 — Handle location_discovered websocket events in game.html
 
 **Files to change:** `static/game.html`
 
@@ -220,7 +211,7 @@ Add a websocket message handler for event type `location_discovered`. The payloa
 
 ---
 
-### PRIORITY 3 — Add collision-aware coordinate assignment for new locations
+### PRIORITY 2 — Add collision-aware coordinate assignment for new locations
 
 **Files to change:** `simulation/world_expansion.py`
 
@@ -238,7 +229,7 @@ Call this function whenever a new `Location` row is created and assign `map_x` /
 
 ---
 
-### PRIORITY 4 — Broadcast location_discovered from world_expansion.py
+### PRIORITY 3 — Broadcast location_discovered from world_expansion.py
 
 **Files to change:** `simulation/world_expansion.py`, `api/websocket_manager.py`
 
@@ -248,7 +239,7 @@ After committing a new confirmed `Location` row (with coordinates assigned), bro
 
 ---
 
-### PRIORITY 5 — Expand discovery detection to multiple signal sources
+### PRIORITY 4 — Expand discovery detection to multiple signal sources
 
 **Files to change:** `simulation/world_expansion.py`
 
@@ -271,7 +262,7 @@ Phrases like "beyond my reach" or "lost in thought" must not trigger discovery �
 
 ---
 
-### PRIORITY 6 — Tie discovery to discoverer character state
+### PRIORITY 5 — Tie discovery to discoverer character state
 
 **Files to change:** `simulation/world_expansion.py`, `simulation/memory_writer.py`, `simulation/social_roles.py`, `database/models.py`
 
@@ -287,7 +278,7 @@ Log each discovery event with character name, location name, and sim_day.
 
 ---
 
-### PRIORITY 7 — Increment use_count on Location when used in a scene
+### PRIORITY 6 — Increment use_count on Location when used in a scene
 
 **Files to change:** `simulation/conversation_runner.py` or `simulation/engine.py`
 
@@ -297,7 +288,7 @@ After each scene completes, look up the scene's location by name in the `Locatio
 
 ---
 
-### PRIORITY 8 — Expose discovery history and evolution indicators on the dashboard
+### PRIORITY 7 — Expose discovery history and evolution indicators on the dashboard
 
 **Files to change:** `static/dashboard.html`, `api/routes.py`
 

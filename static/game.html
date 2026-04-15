@@ -169,21 +169,24 @@
 
 const W = 900, H = 650;
 
-// Location layout on the map (percentage of W x H)
-const LOCATION_LAYOUT = {
-  'Central Square':           { x: 0.50, y: 0.50, w: 110, h: 80,  color: 0x1a3320 },
-  'The Meridian':             { x: 0.50, y: 0.22, w: 90,  h: 60,  color: 0x1a2040 },
-  'Bayou Market':             { x: 0.73, y: 0.47, w: 85,  h: 60,  color: 0x2a1a10 },
-  'The Workshop':             { x: 0.70, y: 0.70, w: 80,  h: 55,  color: 0x201a10 },
-  'Caldwell Public Library':  { x: 0.27, y: 0.28, w: 85,  h: 60,  color: 0x1a1a2a },
-  'Community Center':         { x: 0.50, y: 0.76, w: 95,  h: 55,  color: 0x1a2010 },
-  'Riverside Park':           { x: 0.15, y: 0.55, w: 75,  h: 90,  color: 0x102010 },
-  'Warehouse Row':            { x: 0.60, y: 0.88, w: 100, h: 45,  color: 0x1a1510 },
-  'Rooftop Garden':           { x: 0.50, y: 0.10, w: 80,  h: 45,  color: 0x102018 },
-  'The Chapel':               { x: 0.75, y: 0.25, w: 70,  h: 50,  color: 0x20151a },
-  'The Schoolhouse':          { x: 0.30, y: 0.12, w: 80,  h: 50,  color: 0x1a1820 },
-  'Lakeview Flats':           { x: 0.14, y: 0.78, w: 80,  h: 55,  color: 0x101a18 },
+// Visual-only rendering style per named location (w, h, color)
+const LOCATION_STYLE = {
+  'Central Square':           { w: 110, h: 80,  color: 0x1a3320 },
+  'The Meridian':             { w: 90,  h: 60,  color: 0x1a2040 },
+  'Bayou Market':             { w: 85,  h: 60,  color: 0x2a1a10 },
+  'The Workshop':             { w: 80,  h: 55,  color: 0x201a10 },
+  'Caldwell Public Library':  { w: 85,  h: 60,  color: 0x1a1a2a },
+  'Community Center':         { w: 95,  h: 55,  color: 0x1a2010 },
+  'Riverside Park':           { w: 75,  h: 90,  color: 0x102010 },
+  'Warehouse Row':            { w: 100, h: 45,  color: 0x1a1510 },
+  'Rooftop Garden':           { w: 80,  h: 45,  color: 0x102018 },
+  'The Chapel':               { w: 70,  h: 50,  color: 0x20151a },
+  'The Schoolhouse':          { w: 80,  h: 50,  color: 0x1a1820 },
+  'Lakeview Flats':           { w: 80,  h: 55,  color: 0x101a18 },
 };
+
+// Populated at runtime from /api/world_map — keyed by location name
+let locationNodes = {};
 
 const GENDER_COLOR  = { F: 0xf778ba, M: 0x58a6ff };
 const GENDER_COLOR_CSS = { F: '#f778ba', M: '#58a6ff' };
@@ -204,14 +207,39 @@ let activeConvos = {};    // convo_key -> { line, timer }
 let selectedId = null;
 let phaserScene = null;
 
+// ── World map loader ─────────────────────────────────────────────────────────
+
+async function loadWorldMap() {
+  try {
+    const r = await fetch('/api/world_map');
+    const locs = await r.json();
+    locationNodes = {};
+    for (const loc of locs) {
+      if (loc.map_x != null && loc.map_y != null) {
+        locationNodes[loc.name] = {
+          x: loc.map_x,
+          y: loc.map_y,
+          name: loc.name,
+          id: loc.id,
+          is_emergent: loc.is_emergent,
+          territory_type: loc.territory_type,
+        };
+      }
+    }
+  } catch (e) {
+    console.error('loadWorldMap failed:', e);
+  }
+}
+
 // ── Phaser Scene ──────────────────────────────────────────────────────────────
 
 class CaldwellScene extends Phaser.Scene {
   constructor() { super({ key: 'CaldwellScene' }); }
 
-  create() {
+  async create() {
     phaserScene = this;
     this.graphics = this.add.graphics();
+    await loadWorldMap();
     this.drawMap();
     this.drawCreek();
     this.input.on('pointerdown', this.onMapClick, this);
@@ -226,19 +254,21 @@ class CaldwellScene extends Phaser.Scene {
     g.fillRect(0, 0, W, H);
 
     // Draw each location zone
-    for (const [name, cfg] of Object.entries(LOCATION_LAYOUT)) {
-      const cx = cfg.x * W;
-      const cy = cfg.y * H;
-      const hw = cfg.w / 2;
-      const hh = cfg.h / 2;
+    for (const [name, node] of Object.entries(locationNodes)) {
+      const style = LOCATION_STYLE[name] || { w: 80, h: 50, color: 0x1a1a1a };
+      const cx = node.x * W;
+      const cy = node.y * H;
+      const hw = style.w / 2;
+      const hh = style.h / 2;
 
-      // Zone fill
-      g.fillStyle(cfg.color, 1);
-      g.fillRoundedRect(cx - hw, cy - hh, cfg.w, cfg.h, 8);
+      // Zone fill — emergent locations get a distinct tint
+      const fillColor = node.is_emergent ? 0x1a2830 : style.color;
+      g.fillStyle(fillColor, 1);
+      g.fillRoundedRect(cx - hw, cy - hh, style.w, style.h, 8);
 
       // Zone border
       g.lineStyle(1, 0x21262d, 0.8);
-      g.strokeRoundedRect(cx - hw, cy - hh, cfg.w, cfg.h, 8);
+      g.strokeRoundedRect(cx - hw, cy - hh, style.w, style.h, 8);
 
       // Location label
       const shortName = name.replace('Caldwell Public ', '').replace('The ', '');
@@ -247,7 +277,7 @@ class CaldwellScene extends Phaser.Scene {
         color: '#6e7681',
         fontFamily: 'SF Mono, Fira Code, monospace',
         align: 'center',
-        wordWrap: { width: cfg.w - 8 },
+        wordWrap: { width: style.w - 8 },
       }).setOrigin(0.5, 0.5);
     }
 
@@ -267,8 +297,8 @@ class CaldwellScene extends Phaser.Scene {
       ['Riverside Park', 'Lakeview Flats'],
     ];
     for (const [a, b] of connections) {
-      const la = LOCATION_LAYOUT[a];
-      const lb = LOCATION_LAYOUT[b];
+      const la = locationNodes[a];
+      const lb = locationNodes[b];
       if (la && lb) {
         g.lineBetween(la.x * W, la.y * H, lb.x * W, lb.y * H);
       }
@@ -306,7 +336,8 @@ class CaldwellScene extends Phaser.Scene {
   }
 
   spawnCharacter(char) {
-    const loc = LOCATION_LAYOUT[char.location] || LOCATION_LAYOUT['Central Square'];
+    const loc = locationNodes[char.location];
+    if (!loc) { console.warn(`spawnCharacter: unknown location "${char.location}" — skipping`); return; }
     const spread = 22;
     // Spread characters within location zone
     const existing = Object.values(charSprites).filter(
@@ -384,7 +415,8 @@ class CaldwellScene extends Phaser.Scene {
   moveCharacter(rosterId, newLocation) {
     const sprite = charSprites[rosterId];
     if (!sprite) return;
-    const loc = LOCATION_LAYOUT[newLocation] || LOCATION_LAYOUT['Central Square'];
+    const loc = locationNodes[newLocation];
+    if (!loc) { console.warn(`moveCharacter: unknown location "${newLocation}" — skipping`); return; }
 
     // Find position within location (same spread logic)
     const atLoc = Object.values(charSprites).filter(
@@ -738,10 +770,11 @@ function renderHeatmap() {
   if (heatOverlay) { heatOverlay.destroy(); heatOverlay = null; }
   const g = phaserScene.add.graphics();
   heatmapData.forEach(entry => {
-    const loc = LOCATION_LAYOUT[entry.location];
+    const loc = locationNodes[entry.location];
     if (!loc) return;
+    const style = LOCATION_STYLE[entry.location] || { w: 80, h: 50 };
     const cx = loc.x * W, cy = loc.y * H;
-    const r = Math.max(loc.w, loc.h) * 0.65 * (0.5 + entry.intensity * 0.5);
+    const r = Math.max(style.w, style.h) * 0.65 * (0.5 + entry.intensity * 0.5);
     const alpha = 0.12 + entry.intensity * 0.3;
     // Color: hot = amber->red, cold = blue
     const color = entry.intensity > 0.6 ? 0xf85149 : entry.intensity > 0.3 ? 0xd29922 : 0x58a6ff;
