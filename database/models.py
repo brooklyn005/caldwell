@@ -887,6 +887,8 @@ class LocationMemory(Base):
     last_notable_day = Column(Integer, nullable=True)
     who_controls = Column(String(64), nullable=True)     # roster_id of dominant character
     who_avoids = Column(Text, default="[]")              # JSON list of roster_ids
+    privacy_rating = Column(Float, default=0.0)          # 0-1, socially coded as private
+    social_taboo_score = Column(Float, default=0.0)      # 0-1, how taboo acts here are perceived
     updated_at = Column(DateTime, default=datetime.utcnow)
 
     @property
@@ -900,3 +902,54 @@ class LocationMemory(Base):
     @identity_tags.setter
     def identity_tags(self, val):
         self.identity_tags_json = json.dumps(val)
+
+
+# ── Epistemic Belief System ───────────────────────────────────────────────────
+
+class CharacterBelief(Base):
+    """
+    What a character thinks they know about private/intimate behaviors.
+    Built from accumulated signals (ambiguous sensory observations), not direct facts.
+    States: confusion → tentative → labeled → social_concept
+    """
+    __tablename__ = "character_beliefs"
+    __table_args__ = (UniqueConstraint("character_id", "subject"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    character_id = Column(Integer, ForeignKey("characters.id"), nullable=False)
+    subject = Column(String(64), nullable=False)
+    # behavior categories: shared_touch, body_change_female, body_change_male,
+    # private_sounds, concealed_activity, pair_bonding, unknown_distress
+    belief_state = Column(String(32), default="confusion")
+    # confusion → tentative → labeled → social_concept
+    signals_json = Column(Text, default="[]")        # list of signal strings
+    signal_count = Column(Integer, default=0)
+    source_count = Column(Integer, default=0)        # distinct source types
+    vocabulary_tag = Column(String(64), nullable=True)   # word they've coined/adopted
+    confidence = Column(Float, default=0.1)
+    coherence = Column(Float, default=0.1)
+    first_signal_day = Column(Integer, nullable=False)
+    last_updated_day = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Community Lexicon ─────────────────────────────────────────────────────────
+
+class LexiconEntry(Base):
+    """
+    A word or phrase coined by the community for something that lacks a name.
+    Terms start with one character and spread as others adopt them.
+    """
+    __tablename__ = "lexicon_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    term = Column(String(64), unique=True, nullable=False)
+    rough_meaning = Column(Text, nullable=True)          # what it seems to refer to
+    coined_by_id = Column(Integer, ForeignKey("characters.id"), nullable=True)
+    coined_on_day = Column(Integer, nullable=False)
+    category = Column(String(32), default="behavior")
+    # behavior, body_part, emotional_state, relationship, place
+    adopters_json = Column(Text, default="[]")           # roster_ids who use it
+    adoption_count = Column(Integer, default=1)
+    community_adoption_level = Column(Float, default=0.0)  # 0-1
+    created_at = Column(DateTime, default=datetime.utcnow)

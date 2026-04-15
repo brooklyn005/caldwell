@@ -115,6 +115,20 @@ def update_location_memory_after_scene(
     else:
         mem.privacy_score = (mem.privacy_score * 0.8) + (scene_privacy * 0.2)
 
+    # Update spatial social coding — privacy_rating and social_taboo_score
+    # privacy_rating: how "private" this space is socially coded as
+    if scene_type in ("quiet_intimacy", "resentment"):
+        mem.privacy_rating = min((mem.privacy_rating or 0.0) + 0.08, 1.0)
+    elif scene_type in ("distribution", "status_challenge", "ritual"):
+        mem.privacy_rating = max((mem.privacy_rating or 0.0) - 0.03, 0.0)
+    # social_taboo_score: how charged/taboo actions here are perceived
+    if scene_type == "quiet_intimacy":
+        mem.social_taboo_score = min((mem.social_taboo_score or 0.0) + 0.12, 1.0)
+    elif scene_type in ("argument", "status_challenge"):
+        mem.social_taboo_score = min((mem.social_taboo_score or 0.0) + 0.05, 1.0)
+    else:
+        mem.social_taboo_score = max((mem.social_taboo_score or 0.0) - 0.02, 0.0)
+
     # Charge level — intimate and conflict scenes charge a space
     if scene_type in ("quiet_intimacy", "argument", "status_challenge", "correction"):
         mem.charge_level = min((mem.charge_level or 0) + 0.1, 1.0)

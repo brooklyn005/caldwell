@@ -1784,6 +1784,42 @@ def get_world_map(db: Session = Depends(get_db)):
     ]
 
 
+# ── Epistemology endpoints ────────────────────────────────────────────────────
+
+@router.get("/api/lexicon")
+def get_lexicon(db: Session = Depends(get_db)):
+    """Return all community-coined lexicon entries."""
+    from simulation.lexicon import get_lexicon_for_dashboard
+    return get_lexicon_for_dashboard(db)
+
+
+@router.get("/api/beliefs")
+def get_beliefs(db: Session = Depends(get_db)):
+    """Return all non-trivial character beliefs."""
+    from simulation.epistemology import get_all_beliefs_for_dashboard
+    return get_all_beliefs_for_dashboard(db)
+
+
+@router.get("/api/location_privacy")
+def get_location_privacy(db: Session = Depends(get_db)):
+    """Return location memory rows with privacy_rating and social_taboo_score."""
+    from database.models import LocationMemory
+    rows = db.query(LocationMemory).all()
+    result = []
+    for mem in rows:
+        loc = db.query(Location).filter(Location.id == mem.location_id).first()
+        result.append({
+            "location_name": loc.name if loc else str(mem.location_id),
+            "privacy_rating": round(mem.privacy_rating or 0.0, 2),
+            "social_taboo_score": round(mem.social_taboo_score or 0.0, 2),
+            "privacy_score": round(mem.privacy_score or 0.0, 2),
+            "dominant_mood": mem.dominant_mood,
+            "charge_level": round(mem.charge_level or 0.0, 2),
+            "identity_tags": mem.identity_tags,
+        })
+    return sorted(result, key=lambda x: -x["privacy_rating"])
+
+
 # ── Procreation endpoints ─────────────────────────────────────────────────────
 
 @router.get("/api/pregnancies")

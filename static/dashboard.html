@@ -250,6 +250,7 @@ button.tab:hover { border-color: var(--accent); color: var(--accent); }
   <button class="tab" id="tab-world" onclick="switchDashTab('world')">🗺 World</button>
   <button class="tab" id="tab-transcripts" onclick="switchDashTab('transcripts')">📜 Transcripts</button>
   <button class="tab" id="tab-themes" onclick="switchDashTab('themes')">🔍 Themes</button>
+  <button class="tab" id="tab-knowledge" onclick="switchDashTab('knowledge')">🧠 Knowledge</button>
   <button id="refresh-btn" onclick="loadAll()">↺ Refresh</button>
 </div>
 
@@ -815,6 +816,7 @@ function switchDashTab(tab) {
   if (tab === 'questions' && !questionsLoaded) loadOpenQuestions();
   if (tab === 'transcripts' || tab === 'themes') loadTranscriptChars();
   if (tab === 'world') loadWorldExpansion();
+  if (tab === 'knowledge') loadKnowledge();
 }
 
 // ── Power / Centrality Map ─────────────────────────────────────────────────
@@ -2173,6 +2175,45 @@ async function loadOpenQuestions() {
   </div>
 </div>
 
+<!-- ── Knowledge / Epistemology tab ──────────────────────────────────────── -->
+<div id="dash-tab-knowledge" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:1fr 1fr 260px;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+
+    <!-- Left: Community Lexicon -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Community Lexicon</span>
+        <span id="lexicon-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="lexicon-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Middle: Character Beliefs -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">What They Think They Know</span>
+        <span id="beliefs-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="beliefs-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Right: Location Privacy Map -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Privacy Map</span>
+      </div>
+      <div class="panel-scroll" id="privacy-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <script>
 async function loadWorldExpansion() {
   // ── Discoveries ──────────────────────────────────────────────────────────
@@ -2245,6 +2286,123 @@ async function loadWorldExpansion() {
     }
   } catch(e) {
     document.getElementById('pathfinders-list').innerHTML =
+      `<div style="color:var(--red);padding:12px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+}
+
+// ── Knowledge / Epistemology tab ──────────────────────────────────────────────
+let knowledgeLoaded = false;
+async function loadKnowledge() {
+  if (knowledgeLoaded) return;
+  knowledgeLoaded = true;
+
+  const BELIEF_COLORS = {
+    tentative: '#b8860b',
+    labeled: '#4a9eda',
+    social_concept: '#6ab04c',
+  };
+
+  // ── Lexicon ────────────────────────────────────────────────────────────────
+  try {
+    const r = await fetch('/api/lexicon');
+    const terms = await r.json();
+    const el = document.getElementById('lexicon-list');
+    const countEl = document.getElementById('lexicon-count');
+    countEl.textContent = `${terms.length} term${terms.length !== 1 ? 's' : ''}`;
+
+    if (!terms.length) {
+      el.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No terms coined yet. Characters still searching for words.</div>';
+    } else {
+      el.innerHTML = terms.map(t => {
+        const bar = Math.round((t.community_adoption_level || 0) * 100);
+        return `<div style="padding:8px 10px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="font-weight:bold;color:var(--accent);font-size:11px;">"${t.term}"</span>
+            <span style="font-size:9px;color:var(--muted);background:var(--border);padding:1px 4px;border-radius:2px;">${t.category}</span>
+            <span style="font-size:9px;color:var(--muted);margin-left:auto;">day ${t.coined_on_day}</span>
+          </div>
+          <div style="font-size:10px;color:var(--text);margin-bottom:4px;">${t.rough_meaning || '—'}</div>
+          <div style="font-size:9px;color:var(--muted);">coined by ${t.coined_by || '?'} &nbsp;·&nbsp; ${t.adoption_count} adopter${t.adoption_count !== 1 ? 's' : ''}</div>
+          <div style="margin-top:3px;height:2px;background:var(--border);border-radius:1px;">
+            <div style="height:2px;background:var(--accent);border-radius:1px;width:${bar}%;"></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('lexicon-list').innerHTML =
+      `<div style="color:var(--red);padding:12px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+
+  // ── Beliefs ────────────────────────────────────────────────────────────────
+  try {
+    const r = await fetch('/api/beliefs');
+    const beliefs = await r.json();
+    const el = document.getElementById('beliefs-list');
+    const countEl = document.getElementById('beliefs-count');
+    countEl.textContent = `${beliefs.length} belief${beliefs.length !== 1 ? 's' : ''}`;
+
+    if (!beliefs.length) {
+      el.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No developed beliefs yet. Characters still accumulating signals.</div>';
+    } else {
+      const stateLabel = { tentative: 'Working Theory', labeled: 'Labeled', social_concept: 'Shared Concept' };
+      el.innerHTML = beliefs.map(b => {
+        const color = BELIEF_COLORS[b.belief_state] || '#888';
+        const subjectLabel = b.subject.replace(/_/g, ' ');
+        return `<div style="padding:8px 10px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-weight:bold;font-size:11px;">${b.character}</span>
+            <span style="font-size:9px;color:${color};background:${color}22;padding:1px 5px;border-radius:2px;border:1px solid ${color}44;">${stateLabel[b.belief_state] || b.belief_state}</span>
+            <span style="font-size:9px;color:var(--muted);margin-left:auto;">${b.signal_count} signal${b.signal_count !== 1 ? 's' : ''}</span>
+          </div>
+          <div style="font-size:10px;color:var(--muted);">${subjectLabel}</div>
+          ${b.vocabulary_tag ? `<div style="font-size:9px;color:var(--accent);margin-top:2px;">calls it: "${b.vocabulary_tag}"</div>` : ''}
+          <div style="font-size:9px;color:var(--muted);margin-top:1px;">sources: ${b.source_count} &nbsp;·&nbsp; first signal day ${b.first_signal_day}</div>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('beliefs-list').innerHTML =
+      `<div style="color:var(--red);padding:12px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+
+  // ── Privacy Map ────────────────────────────────────────────────────────────
+  try {
+    const r = await fetch('/api/location_privacy');
+    const locs = await r.json();
+    const el = document.getElementById('privacy-list');
+
+    if (!locs.length) {
+      el.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No location memory yet.</div>';
+    } else {
+      el.innerHTML = locs.map(loc => {
+        const pr = Math.round((loc.privacy_rating || 0) * 100);
+        const tab = Math.round((loc.social_taboo_score || 0) * 100);
+        const prColor = pr >= 60 ? '#e74c3c' : pr >= 30 ? '#e67e22' : '#6ab04c';
+        return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:bold;margin-bottom:3px;">${loc.location_name}</div>
+          <div style="display:flex;gap:8px;margin-bottom:3px;">
+            <div style="flex:1;">
+              <div style="font-size:8px;color:var(--muted);margin-bottom:1px;">PRIVATE</div>
+              <div style="height:3px;background:var(--border);border-radius:1px;">
+                <div style="height:3px;background:${prColor};border-radius:1px;width:${pr}%;"></div>
+              </div>
+              <div style="font-size:9px;color:${prColor};">${pr}%</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:8px;color:var(--muted);margin-bottom:1px;">TABOO</div>
+              <div style="height:3px;background:var(--border);border-radius:1px;">
+                <div style="height:3px;background:#9b59b6;border-radius:1px;width:${tab}%;"></div>
+              </div>
+              <div style="font-size:9px;color:#9b59b6;">${tab}%</div>
+            </div>
+          </div>
+          ${loc.dominant_mood ? `<div style="font-size:9px;color:var(--muted);">mood: ${loc.dominant_mood}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('privacy-list').innerHTML =
       `<div style="color:var(--red);padding:12px;font-size:10px;">Error: ${e.message}</div>`;
   }
 }

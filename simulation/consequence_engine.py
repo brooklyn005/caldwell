@@ -156,6 +156,45 @@ def _derive_rule_based_consequences(
             reader_visible=True,
         ))
 
+    # ── First-Person Rule: Transformative first experiences ────────────────
+    # A character's first quiet_intimacy scene is coded as Transformative.
+    # This significantly shifts guardedness (down) and marks the experience.
+    if scene_type == "quiet_intimacy":
+        for char in participants:
+            prior_count = _count_prior_intimate_scenes(char, sim_day, db)
+            if prior_count == 0:
+                char_name = char.given_name or char.roster_id
+                consequences.append(ConsequenceRecord(
+                    sim_day=sim_day,
+                    source_type="scene",
+                    consequence_type="transformative_first_experience",
+                    affected_ids_json=json.dumps([char.roster_id]),
+                    location_id=location.id,
+                    description=(
+                        f"This was {char_name}'s first time in this kind of closeness. "
+                        f"Something shifted — a before and after has been created."
+                    ),
+                    severity=0.85,
+                    persistence=30,
+                    reader_visible=True,
+                ))
+                # Lower guardedness in transient state
+                try:
+                    from database.models import CharacterTransientState
+                    transient = db.query(CharacterTransientState).filter(
+                        CharacterTransientState.character_id == char.id,
+                        CharacterTransientState.sim_day == sim_day,
+                    ).first()
+                    if transient:
+                        transient.guardedness = max(
+                            0.0, (transient.guardedness or 0.3) - 0.2
+                        )
+                except Exception:
+                    pass
+                logger.info(
+                    f"  TRANSFORMATIVE: {char_name}'s first quiet_intimacy scene — marked"
+                )
+
     # ── Emotional residue ──────────────────────────────────────────────────
     # Long confrontational scenes leave emotional weight
     if scene_type in ("argument", "resentment", "correction") and len(exchanges) >= 10:
@@ -202,6 +241,23 @@ def _derive_rule_based_consequences(
         ))
 
     return consequences
+
+
+def _count_prior_intimate_scenes(char, sim_day: int, db: Session) -> int:
+    """Count how many quiet_intimacy scenes this character participated in before today."""
+    try:
+        from database.models import Scene as SceneModel
+        import json as _json
+        scenes = db.query(SceneModel).filter(
+            SceneModel.scene_type == "quiet_intimacy",
+            SceneModel.sim_day < sim_day,
+        ).all()
+        return sum(
+            1 for s in scenes
+            if char.roster_id in _json.loads(s.participant_ids_json or "[]")
+        )
+    except Exception:
+        return 0
 
 
 def _advance_or_create_threads(

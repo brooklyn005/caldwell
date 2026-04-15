@@ -14,6 +14,7 @@ Naming philosophy:
 """
 import re
 import logging
+import random
 from sqlalchemy.orm import Session
 from database.models import Character, Memory, CharacterRelationship, InceptionEvent
 from simulation.ai_caller import call_scoring_model
@@ -385,6 +386,60 @@ def detect_names(
             logger.info(f"NAMING (standalone): {speaker.roster_id} -> {name}")
 
     db.commit()
+
+
+def write_signal_memory_for_witness(
+    witness: Character,
+    scene_type: str,
+    location_name: str,
+    participant_names: list[str],
+    sim_day: int,
+    db: Session,
+) -> None:
+    """
+    Called when a character is a WITNESS to a private scene (not a participant).
+    Instead of writing what happened explicitly, writes an ambiguous signal memory
+    and records a belief signal via the epistemology module.
+    """
+    _WITNESS_SIGNALS = {
+        "quiet_intimacy": [
+            f"I heard something from the direction of {location_name} — a sound I didn't recognize.",
+            f"I came past {location_name} and felt like I'd interrupted something.",
+            f"Something was happening near {location_name}. They went quiet when I got close.",
+            f"The way they looked when I walked in — like I'd seen something I wasn't supposed to.",
+            f"I noticed {participant_names[0] if participant_names else 'someone'} coming from {location_name} looking different.",
+        ],
+        "resentment": [
+            f"I sensed something private had been happening near {location_name}.",
+            f"Someone was alone there and didn't want to be seen.",
+        ],
+    }
+
+    signals = _WITNESS_SIGNALS.get(scene_type, [
+        f"Something happened near {location_name} that wasn't meant to be witnessed."
+    ])
+    signal_text = random.choice(signals)
+
+    write_memory(
+        character=witness,
+        content=signal_text,
+        sim_day=sim_day,
+        db=db,
+        emotional_weight=0.6,
+        memory_type="observation",
+    )
+
+    # Record epistemic signal
+    try:
+        from simulation.epistemology import record_private_signal, detect_subject_from_text
+        subject = detect_subject_from_text(signal_text) or (
+            "shared_touch" if scene_type == "quiet_intimacy" else "concealed_activity"
+        )
+        record_private_signal(
+            witness, signal_text, subject, "direct_witness", sim_day, db
+        )
+    except Exception as e:
+        logger.debug(f"Epistemic signal recording failed for {witness.roster_id}: {e}")
 
 
 def write_inception_memory(

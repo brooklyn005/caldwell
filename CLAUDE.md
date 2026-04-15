@@ -206,6 +206,58 @@ tick_interval_minutes = 20
 
 Execute these one at a time in order. Do not begin the next priority until the current one is verified working. Each priority describes exactly what to do, which files to change, and what done looks like.
 
+### Priority 1 — Human Development & Intimacy Discovery System
+Objective: Implement a system where characters discover, misinterpret, and socially codify private behaviors and human development through ambiguous signals rather than explicit facts.
+
+1. The Epistemic Layer (Belief vs. Fact)
+
+Module: Create simulation/epistemology.py.
+
+Logic: Replace "Global Truths" with a Belief model. A belief has a subject, confidence (0-1), coherence (0-1), and vocabulary_tags.
+
+Detection: In memory_writer.py, when a character witnesses a "private" action, do not record the action name. Record a signal (e.g., "heavy breathing," "rhythmic sound," "locked door").
+
+Evolution: Implement a "Refinement Loop": Repeated signals move a belief from Confusion → Tentative Label → Socially Shared Concept.
+
+2. Naïve Language & Custom Lexicon
+
+Module: Create simulation/lexicon.py.
+
+Functionality: Maintain a WorldDictionary of emergent terms. If characters lack a word for a biological act or body part, the prompt_builder.py must force them to use literal, awkward descriptions (e.g., "the chest-thumping," "the shared-breath").
+
+Prompt Injection: Update prompt_builder.py to inject the character's current limited vocabulary into the system prompt. They are forbidden from using modern clinical or adult terminology until the community "discovers" and labels it.
+
+3. Spatial Social Coding
+
+Location Updates: Modify database/models.py for LocationMemory to include privacy_rating and social_taboo_score.
+
+Behavior: Characters with high "Curiosity" or "Envy" (e.g., Nara, Calla) should gravitate toward "Private" zones to gather signals, while those with high "Order" (Kofi) avoid them.
+
+Transformation: Locations like The Meridian or Lakeview Flats should accumulate "Social Meaning" based on what is overheard there, affecting future scene selection.
+
+4. Witness & Social Transmission
+
+Module: Create simulation/intimacy_spread.py.
+
+Logic: When a character "shares a secret" in a scene, they transmit their Belief (including the errors) to the listener.
+
+Contradiction: If Character A believes "Movement X" is a sickness and Character B believes it is a ritual, the resulting social tension must be logged in CivilizationThread.
+
+5. Dashboard & Cultural Dictionary
+
+Visualization: Update static/dashboard.html to display:
+
+The Lexicon: A table showing "Community Created Words" and their inferred meanings.
+
+Knowledge Heatmap: Which characters "know" (or think they know) about specific private behaviors.
+
+Privacy Map: Visual indicators of which locations are currently coded as "Private" or "Avoided."
+
+6. Implementation Constraints
+
+No Instant Understanding: A character must witness a behavior at least 2 times or hear it from 2 sources before they "label" it.
+
+The "First-Person" Rule: First-time experiences must be coded as "Transformative" in consequence_engine.py, significantly shifting guardedness and attachment scores.
 ---
 
 ## What NOT to do

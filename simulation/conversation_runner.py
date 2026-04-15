@@ -232,6 +232,23 @@ async def run_conversation(
     mark_inceptions_delivered(char_a, sim_day, db)
     mark_inceptions_delivered(char_b, sim_day, db)
 
+    # Lexicon — scan for coined terms in this conversation
+    try:
+        from simulation.lexicon import detect_new_terms_in_exchanges
+        detect_new_terms_in_exchanges(char_a, exchanges, sim_day, db)
+        detect_new_terms_in_exchanges(char_b, exchanges, sim_day, db)
+    except Exception as e:
+        logger.debug(f"Lexicon detection failed: {e}")
+
+    # Belief spread — transmit beliefs when secrets are shared
+    try:
+        from simulation.intimacy_spread import spread_beliefs_after_scene
+        spread_beliefs_after_scene(
+            char_a, char_b, scene_type or "", exchanges, sim_day, db
+        )
+    except Exception as e:
+        logger.debug(f"Belief spread failed: {e}")
+
     # Open questions — extract new ones, check resolution of existing ones
     try:
         from simulation.open_question import extract_open_questions, check_resolution

@@ -383,6 +383,22 @@ def build_system_prompt(
     except Exception:
         questions_block = ""
 
+    vocab_block = ""
+    try:
+        from simulation.lexicon import get_vocabulary_constraints
+        vocab_block = get_vocabulary_constraints(character, db)
+    except Exception:
+        pass
+
+    belief_block = ""
+    try:
+        from simulation.epistemology import get_belief_prompt_block
+        belief_text = get_belief_prompt_block(character, db)
+        if belief_text:
+            belief_block = f"\n{belief_text}\n"
+    except Exception:
+        pass
+
     status_block = ""
     if status_context:
         status_block = f"\nYOUR STANDING HERE:\n{status_context}\n"
@@ -512,9 +528,10 @@ Nothing was handed to you. You are making civilization from nothing.
 
 YOUR MEMORIES:
 {memory_block}
-{inception_block}
+{inception_block}{belief_block}
 {transient_block}
 {tendency_block}
+{vocab_block}
 
 {env_block}RIGHT NOW:
 You are at {location.name}. {loc_desc}
