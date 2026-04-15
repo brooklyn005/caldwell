@@ -1727,34 +1727,28 @@ async def discover_location_endpoint(
 
 @router.get("/api/world_map")
 def get_world_map(db: Session = Depends(get_db)):
-    from database.models import EmergentLocation, CharacterDisposition, CharacterBiology
-    chars = db.query(Character).filter(Character.alive == True).all()
-    locs = db.query(Location).all()
-    char_data = []
-    for c in chars:
-        loc = db.query(Location).filter(Location.id == c.current_location_id).first()
-        disp = db.query(CharacterDisposition).filter(CharacterDisposition.character_id == c.id).first()
-        bio = db.query(CharacterBiology).filter(CharacterBiology.character_id == c.id).first()
-        char_data.append({
-            "roster_id": c.roster_id, "given_name": c.given_name, "gender": c.gender,
-            "location": loc.name if loc else "Unknown", "location_id": c.current_location_id,
-            "disposition": disp.state if disp else "neutral",
-            "hormonal_state": bio.hormonal_state if bio and not c.is_minor else "baseline",
-        })
-    loc_data = []
-    for loc in locs:
-        emergent = db.query(EmergentLocation).filter(EmergentLocation.location_id == loc.id).first()
-        occupants = [c.roster_id for c in chars if c.current_location_id == loc.id]
-        loc_data.append({
-            "id": loc.id, "name": loc.name, "occupants": occupants,
-            "occupant_count": len(occupants),
-            "is_emergent": emergent is not None,
-            "is_outside": emergent.is_outside if emergent else False,
-            "map_x": emergent.map_x if emergent else None,
-            "map_y": emergent.map_y if emergent else None,
-            "discovery_day": emergent.discovery_day if emergent else None,
-        })
-    return {"characters": char_data, "locations": loc_data}
+    """Return all locations with emergent-world fields for the live map."""
+    locs = db.query(Location).order_by(Location.name).all()
+    return [
+        {
+            "id": loc.id,
+            "name": loc.name,
+            "is_seed": loc.is_seed,
+            "is_emergent": loc.is_emergent,
+            "territory_type": loc.territory_type,
+            "discovery_stage": loc.discovery_stage,
+            "location_category": loc.location_category,
+            "map_x": loc.map_x,
+            "map_y": loc.map_y,
+            "danger_level": loc.danger_level,
+            "claim_character_id": loc.claim_character_id,
+            "use_count": loc.use_count,
+            "discovered_by_id": loc.discovered_by_id,
+            "discovered_on_day": loc.discovered_on_day,
+            "confidence": loc.confidence,
+        }
+        for loc in locs
+    ]
 
 
 # ── Procreation endpoints ─────────────────────────────────────────────────────
@@ -2246,3 +2240,4 @@ def get_summary_by_day(sim_day: int, db: Session = Depends(get_db)):
     if not summary:
         raise HTTPException(status_code=404, detail=f"No summary for day {sim_day}")
     return _format_summary(summary)
+
