@@ -30,7 +30,7 @@ from simulation.social_learning import (
     record_conversation_learning, record_social_observations,
 )
 from simulation.prompt_builder import get_pending_inception
-from simulation.scene_builder import build_scene_from_memories
+from simulation.scene_builder import build_scene_from_memories, build_embodied_scene_frame
 from simulation.norm_detector import detect_norms_from_conversation
 
 logger = logging.getLogger("caldwell.conversation")
@@ -100,21 +100,31 @@ async def run_conversation(
 
     # ── Opening message ────────────────────────────────────────────────────────
     if scene_context:
+        # Engine-authored physical beat — narrator entry comes first in exchanges
+        frame = build_embodied_scene_frame(scene_type or "", char_a, char_b, location)
+        exchanges.append({
+            "roster_id": "narrator",
+            "given_name": None,
+            "text": frame,
+            "model": None,
+        })
+
+        # char_a speaks INTO the physical frame, not before it
         if scene_type == "quiet_intimacy":
             opening_content = (
-                f"You are at {location.name} with "
-                f"{char_b.given_name or 'the other person'}. "
-                f"The two of you have ended up here without crisis driving it. "
-                f"Begin from inside this moment — what you notice, what you feel, "
-                f"what comes out of you naturally. At least 8 sentences."
+                f"{frame}\n\n"
+                f"You are {char_a.given_name or 'here'}. This is where you are right now. "
+                f"Begin with what your body is doing — where your hands are, what you're facing, "
+                f"what you sense. Then, if you speak, speak from inside that. "
+                f"At least 8 sentences."
             )
         else:
             opening_content = (
-                f"You are at {location.name} with "
-                f"{char_b.given_name or 'the other person'}. "
-                f"The situation described is happening right now. "
-                f"Begin from inside it — what you are doing, what you need to say, "
-                f"what the moment demands of you. At least 8 sentences."
+                f"{frame}\n\n"
+                f"You are {char_a.given_name or 'here'}. This is where you are right now. "
+                f"Begin with a physical action beat before you say anything — "
+                f"what your hands are doing, where your body is positioned, what you're noticing. "
+                f"Then speak. At least 8 sentences."
             )
         init_msgs = [{"role": "user", "content": opening_content}]
     else:

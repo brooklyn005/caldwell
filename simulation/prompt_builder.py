@@ -421,11 +421,13 @@ def build_system_prompt(
     ) if dramatic_purpose else ""
 
     scene_block = (
-        f"WHAT IS HAPPENING RIGHT NOW — THIS IS THE PHYSICAL REALITY OF THIS MOMENT:\n"
+        f"WHAT IS HAPPENING RIGHT NOW — THE PHYSICAL REALITY OF THIS MOMENT:\n"
         f"{scene_context}\n"
-        f"You are IN this. Your body is doing the thing described above. "
-        f"Speak and act from inside it — not around it, not after it. "
-        f"The physical activity and the conversation happen at the same time.\n"
+        f"You are IN this. Before you say a single word, your body is already doing something. "
+        f"Where are your hands? Where is your weight? What are you looking at? What do you smell? "
+        f"Begin with that physical beat — one or two sentences of what you are doing in the space — "
+        f"and then speak from inside it. Not before it. Not instead of it. "
+        f"The conversation happens inside the physical moment, not in spite of it.\n"
         f"{purpose_line}"
     ) if scene_context else (
         f"{purpose_line}" if dramatic_purpose else ""

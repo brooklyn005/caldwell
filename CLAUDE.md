@@ -169,15 +169,12 @@ tick_interval_minutes = 20
 - `social_roles.py` — role inference from behavioral evidence
 - `location_memory.py` — location personality accumulation
 - `daybook.py` — reader summary assembly
-- `scene_builder.py` — physical scene context templates (rich sensory framing)
+- `scene_builder.py` — physical scene context templates (rich sensory framing). `build_embodied_scene_frame()` added: 12 scene types + 7 ambient subtypes each produce a 3-4 sentence engine-authored physical paragraph (position, hands, light, smell) per the 12 named locations. Called from `conversation_runner.py` to inject a narrator entry as the first exchange in every scene-plan conversation. `prompt_builder.py` scene_block updated to require a physical action beat before the character's first word.
 - `scene_categorizer.py`, `scene_selector.py`, `pressure_selector.py`
 
 ---
 
 ## Implementation priorities (in order)
-
-### Priority 1 — Embodied scene directive (deeper prompt wiring)
-`scene_builder.py` generates good physical context. `prompt_builder.py` needs to use it more aggressively. The scene frame should establish: who is standing where, what their hands are doing, what the light and smell is. Characters should not speak until after a physical action beat. This means the first message in a scene should come from the engine (not the character) as a brief scene-setting paragraph, then char_a speaks into that environment.
 
 ---
 

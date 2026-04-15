@@ -315,6 +315,164 @@ def build_scene_from_memories(
     return None, None
 
 
+def build_embodied_scene_frame(
+    scene_type: str,
+    char_a: Character,
+    char_b: Character,
+    location: Location,
+) -> str:
+    """
+    Engine-authored physical opening beat — injected as the first 'narrator'
+    entry in exchanges before char_a speaks. Rule-based, no API calls.
+
+    Establishes: who is standing where, what their hands are doing,
+    what the light and smell is. Characters speak INTO this, not before it.
+    """
+    name_a = char_a.given_name or "one of them"
+    name_b = char_b.given_name or "the other"
+    loc_name = location.name if location else "here"
+
+    SENSORY = {
+        "Riverside Park":         "The light is low and directional through the vegetation. The air smells of water and green things.",
+        "Rooftop Garden":         "Wind moves through up here. The whole settlement is visible below. The sky is larger than it seems from the ground.",
+        "Community Center":       "The air inside carries warmth from bodies and cooking. Sounds land differently in this space — softer at the edges, louder in the middle.",
+        "Bayou Market":           "The smell of stored food, damp wood, and the accumulated traces of many people passing through. The light is cut by posts and stalls.",
+        "The Workshop":           "The smell of worked material — metal shavings, sawdust, something burned earlier in the day. The floor is marked with use.",
+        "Warehouse Row":          "The shadows here are deep and the light falls in columns where the roof allows it. Sounds echo off the walls before they die.",
+        "The Chapel":             "The space holds quiet differently from outside. Light comes from above — a high window, or a gap that was made to let something in.",
+        "Central Square":         "The space is open and exposed. There is no angle from which this conversation is private. Anyone who crosses the square can see it.",
+        "The Schoolhouse":        "The chairs are arranged with intention. The room carries the sense of things being taught and received here before.",
+        "Caldwell Public Library": "The smell of old paper and enclosed space. The quiet in here is its own kind of weight, accumulated over time.",
+        "Lakeview Flats":         "The light is flat and wide — no walls to catch it. The sound of the lake is close, just beneath the other sounds.",
+        "The Meridian":           "The center of the settlement. Things converge here. Being here means being in the middle of whatever is happening.",
+    }
+    sensory = SENSORY.get(loc_name, f"They are at {loc_name}.")
+
+    FRAMES = {
+        "argument": (
+            f"{sensory} "
+            f"{name_a} is on their feet. Not pacing — standing, which is different. "
+            f"Their hands are at their sides or gripping something nearby. "
+            f"{name_b} is close enough that the distance between them is a choice someone has made. "
+            f"Whatever is about to be said has been building toward this."
+        ),
+        "status_challenge": (
+            f"{sensory} "
+            f"Both of them are here and both of them know what it means that they are. "
+            f"{name_a} has their weight distributed evenly — feet apart, hands visible, nothing fidgeting. "
+            f"The kind of stillness that says: I am not moving from this."
+        ),
+        "quiet_intimacy": (
+            f"{sensory} "
+            f"{name_a} and {name_b} have arrived here without the pressure of anything urgent. "
+            f"{name_a}'s hands are at rest. The distance between them is smaller than it would be with someone they knew less well. "
+            f"Neither of them has made a point of that."
+        ),
+        "teaching": (
+            f"{sensory} "
+            f"{name_a} has something in their hands — the object, the material, or the tool the teaching concerns. "
+            f"{name_b} is positioned to watch and receive. "
+            f"The space between them is working space, arranged for transfer."
+        ),
+        "gossip": (
+            f"{sensory} "
+            f"{name_a} and {name_b} are closer together than the space requires. "
+            f"Their voices are lower than they need to be. "
+            f"Someone is not here, and that absence is the subject of this conversation."
+        ),
+        "resentment": (
+            f"{sensory} "
+            f"{name_a}'s hands are occupied — doing something, keeping busy in the way that keeps feeling at a manageable distance. "
+            f"{name_b} is present, which is the problem. "
+            f"The unsaid thing is taking up most of the available room."
+        ),
+        "correction": (
+            f"{sensory} "
+            f"{name_a} has gone still. Their hands have stopped moving. "
+            f"They are looking at {name_b} in a way that is not incidental — "
+            f"the kind of looking that has a purpose and isn't pretending otherwise."
+        ),
+        "ritual": (
+            f"{sensory} "
+            f"Both of them have been in this space before and they both carry that. "
+            f"Their bodies remember the previous times — where to stand, what direction to face, "
+            f"how long the quiet goes before someone opens it."
+        ),
+        "distribution": (
+            f"{sensory} "
+            f"There is something here to be divided. {name_a} is positioned at the center of it — "
+            f"hands near the supply, eyes moving across the people present. "
+            f"{name_b} is among those waiting. Everyone is tracking the portions."
+        ),
+        "preparation": (
+            f"{sensory} "
+            f"{name_a}'s hands are busy — checking, organizing, assembling what will be needed. "
+            f"The body is already working toward what comes next. "
+            f"{name_b} is here in their own version of the same readying."
+        ),
+        "return": (
+            f"{sensory} "
+            f"{name_a} has just come back. The effort is still on them — "
+            f"in the set of their shoulders, how they're carrying themselves, "
+            f"what they've put down or are still holding. "
+            f"{name_b} has been here. Waiting, whether that word would be admitted or not."
+        ),
+    }
+
+    if scene_type.startswith("ambient_"):
+        sub = scene_type.replace("ambient_", "")
+        AMBIENT_FRAMES = {
+            "meal": (
+                f"{sensory} "
+                f"{name_a} and {name_b} are eating, or near food that's being eaten. "
+                f"Hands are involved — carrying, dividing, bringing something to the mouth. "
+                f"The practical work of consuming is what's happening right now."
+            ),
+            "labor": (
+                f"{sensory} "
+                f"{name_a} is working. Their hands are doing something specific and unfinished. "
+                f"{name_b} is nearby — working in parallel, or watching the work happen."
+            ),
+            "care": (
+                f"{sensory} "
+                f"One of them is attending to the other. The gesture is practical, not theatrical. "
+                f"{name_a} is positioned to help. {name_b} is in the position of receiving it."
+            ),
+            "grooming": (
+                f"{sensory} "
+                f"Bodies are being tended to. {name_a}'s hands are occupied — "
+                f"on their own body or near {name_b}'s. "
+                f"This kind of proximity has a specific intimacy that doesn't require naming."
+            ),
+            "storytelling": (
+                f"{sensory} "
+                f"{name_a} is the one telling. Their hands move as they speak. "
+                f"{name_b} is listening — which means choosing to be still, and staying."
+            ),
+            "boredom": (
+                f"{sensory} "
+                f"Nothing is urgent right now. {name_a} and {name_b} are both in this space "
+                f"with no task demanding their hands. "
+                f"The quiet hasn't become uncomfortable yet. It's just there."
+            ),
+            "avoidance": (
+                f"{sensory} "
+                f"{name_a} and {name_b} are both here, which neither of them planned for. "
+                f"They have not acknowledged each other yet. "
+                f"Their bodies are angled slightly away. The space between them has a texture."
+            ),
+        }
+        return AMBIENT_FRAMES.get(
+            sub,
+            f"{sensory} {name_a} and {name_b} are here together in the ordinary way of things."
+        )
+
+    return FRAMES.get(
+        scene_type,
+        f"{sensory} {name_a} and {name_b} are at {loc_name}. The moment is about to begin."
+    )
+
+
 def build_directive_scene(
     director: Character,
     executor: Character,
