@@ -128,6 +128,7 @@ def _char_summary(c: Character, db: Session) -> dict:
             "guardedness": round(transient.guardedness, 2),
             "loneliness": round(transient.loneliness, 2),
         } if transient else None,
+        "discovery_count": c.discovery_count or 0,
     }
 
 
@@ -1723,6 +1724,38 @@ async def discover_location_endpoint(
                  "location": new_loc.name, "is_outside": is_outside, "sim_day": sim_day},
     })
     return {"ok": True, "location_id": new_loc.id, "location_name": new_loc.name}
+
+
+@router.get("/api/discoveries")
+def get_discoveries(db: Session = Depends(get_db)):
+    """Return all emergent locations ordered by discovery day, with discoverer name."""
+    locs = (
+        db.query(Location)
+        .filter(Location.is_emergent == True)
+        .order_by(Location.discovered_on_day.desc())
+        .all()
+    )
+    result = []
+    for loc in locs:
+        discoverer_name = None
+        if loc.discovered_by_id:
+            char = db.query(Character).filter(
+                Character.roster_id == loc.discovered_by_id
+            ).first()
+            if char:
+                discoverer_name = char.given_name or char.roster_id
+        result.append({
+            "name": loc.name,
+            "discovered_by_id": loc.discovered_by_id,
+            "discoverer_name": discoverer_name,
+            "discovered_on_day": loc.discovered_on_day,
+            "discovery_stage": loc.discovery_stage,
+            "territory_type": loc.territory_type,
+            "location_category": loc.location_category,
+            "use_count": loc.use_count or 0,
+            "confidence": loc.confidence,
+        })
+    return result
 
 
 @router.get("/api/world_map")

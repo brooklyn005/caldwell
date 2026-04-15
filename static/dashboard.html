@@ -247,6 +247,7 @@ button.tab:hover { border-color: var(--accent); color: var(--accent); }
   <button class="tab" id="tab-biology" onclick="switchDashTab('biology')">🧬 Biology</button>
   <button class="tab" id="tab-scenes" onclick="switchDashTab('scenes')">📊 Scenes</button>
   <button class="tab" id="tab-questions" onclick="switchDashTab('questions')">❓ Questions</button>
+  <button class="tab" id="tab-world" onclick="switchDashTab('world')">🗺 World</button>
   <button class="tab" id="tab-transcripts" onclick="switchDashTab('transcripts')">📜 Transcripts</button>
   <button class="tab" id="tab-themes" onclick="switchDashTab('themes')">🔍 Themes</button>
   <button id="refresh-btn" onclick="loadAll()">↺ Refresh</button>
@@ -813,6 +814,7 @@ function switchDashTab(tab) {
   if (tab === 'scenes' && !scenesLoaded) loadSceneCategories();
   if (tab === 'questions' && !questionsLoaded) loadOpenQuestions();
   if (tab === 'transcripts' || tab === 'themes') loadTranscriptChars();
+  if (tab === 'world') loadWorldExpansion();
 }
 
 // ── Power / Centrality Map ─────────────────────────────────────────────────
@@ -2139,6 +2141,111 @@ async function loadOpenQuestions() {
     console.error('Open questions error:', e);
     document.getElementById('questions-list').innerHTML =
       `<div style="color:var(--red);padding:10px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+}
+</script>
+
+<!-- ── World Expansion tab ──────────────────────────────────────────────── -->
+<div id="dash-tab-world" class="dash-tab" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+  <div style="display:grid;grid-template-columns:1fr 280px;flex:1;gap:1px;background:var(--border);overflow:hidden;">
+
+    <!-- Left: Discovered locations -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">World Expansion</span>
+        <span id="world-count" style="font-size:9px;color:var(--muted);margin-left:auto;"></span>
+      </div>
+      <div class="panel-scroll" id="world-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Right: Pathfinders -->
+    <div style="background:var(--bg);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="panel-head">
+        <span class="panel-title">Pathfinders</span>
+      </div>
+      <div class="panel-scroll" id="pathfinders-list">
+        <div style="color:var(--muted);padding:12px;font-size:10px;">Loading…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+async function loadWorldExpansion() {
+  // ── Discoveries ──────────────────────────────────────────────────────────
+  try {
+    const r = await fetch('/api/discoveries');
+    const locs = await r.json();
+    const listEl = document.getElementById('world-list');
+    const countEl = document.getElementById('world-count');
+    countEl.textContent = `${locs.length} location${locs.length !== 1 ? 's' : ''}`;
+
+    if (!locs.length) {
+      listEl.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No emergent locations yet.</div>';
+    } else {
+      listEl.innerHTML = locs.map(loc => {
+        const isFrontier = loc.territory_type === 'frontier' || loc.territory_type === 'outside';
+        const stageColor = loc.discovery_stage === 'confirmed' ? 'var(--green)'
+                         : loc.discovery_stage === 'tentative'  ? 'var(--yellow)'
+                         : 'var(--muted)';
+        const territoryColor = isFrontier ? 'var(--yellow)' : 'var(--muted)';
+        const barWidth = Math.min(100, (loc.use_count || 0) * 8);
+        return `
+          <div style="padding:9px 12px;border-bottom:1px solid var(--surface2);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+              <span style="font-size:11px;font-weight:600;color:var(--fg);">${loc.name}</span>
+              <span style="font-size:8px;padding:1px 5px;border-radius:2px;background:${stageColor}22;color:${stageColor};">${loc.discovery_stage || '?'}</span>
+              ${isFrontier ? `<span style="font-size:8px;padding:1px 5px;border-radius:2px;background:var(--yellow)22;color:${territoryColor};">${loc.territory_type}</span>` : ''}
+            </div>
+            <div style="font-size:9px;color:var(--muted);margin-bottom:4px;">
+              ${loc.discoverer_name ? `Found by <span style="color:var(--fg);">${loc.discoverer_name}</span>` : 'Discoverer unknown'}
+              ${loc.discovered_on_day != null ? ` · Day ${loc.discovered_on_day}` : ''}
+              ${loc.location_category ? ` · ${loc.location_category}` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:9px;color:var(--muted);">used ${loc.use_count || 0}×</span>
+              ${barWidth > 0 ? `<div style="height:3px;width:${barWidth}px;background:var(--accent);border-radius:2px;"></div>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('world-list').innerHTML =
+      `<div style="color:var(--red);padding:12px;font-size:10px;">Error: ${e.message}</div>`;
+  }
+
+  // ── Pathfinders ──────────────────────────────────────────────────────────
+  try {
+    const r = await fetch('/api/characters');
+    const chars = await r.json();
+    const pathfinders = chars
+      .filter(c => (c.discovery_count || 0) >= 1)
+      .sort((a, b) => (b.discovery_count || 0) - (a.discovery_count || 0));
+    const el = document.getElementById('pathfinders-list');
+
+    if (!pathfinders.length) {
+      el.innerHTML = '<div style="color:var(--muted);padding:12px;font-size:10px;">No discoveries confirmed yet.</div>';
+    } else {
+      el.innerHTML = pathfinders.map(c => {
+        const gColor = c.gender === 'F' ? '#f778ba' : '#58a6ff';
+        const count = c.discovery_count || 0;
+        const barW = Math.min(100, count * 20);
+        return `
+          <div style="padding:8px 12px;border-bottom:1px solid var(--surface2);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+              <span style="font-size:11px;font-weight:600;color:${gColor};">${c.given_name || c.roster_id}</span>
+              <span style="font-size:9px;color:var(--muted);margin-left:auto;">${count} discover${count !== 1 ? 'ies' : 'y'}</span>
+            </div>
+            <div style="height:3px;width:${barW}px;background:var(--green);border-radius:2px;"></div>
+          </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('pathfinders-list').innerHTML =
+      `<div style="color:var(--red);padding:12px;font-size:10px;">Error: ${e.message}</div>`;
   }
 }
 </script>
