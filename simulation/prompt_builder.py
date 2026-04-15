@@ -15,6 +15,7 @@ from simulation.biology import get_biology_prompt
 from simulation.resource_manager import get_status_context, get_resource_status
 from simulation.norm_detector import get_active_norms_for_prompt
 from simulation.environment import get_environment_prompt
+from simulation.transient_state import get_transient_state_for_prompt
 
 
 def get_recent_memories(character: Character, db: Session, limit: int = 8) -> list[str]:
@@ -313,6 +314,14 @@ def build_system_prompt(
     except Exception:
         pass
 
+    transient_block = ""
+    try:
+        transient_text = get_transient_state_for_prompt(character, sim_day, db)
+        if transient_text:
+            transient_block = f"\n{transient_text}\n"
+    except Exception:
+        pass
+
     memories = get_recent_memories(character, db)
     memory_block = (
         "\n".join(f"- {m}" for m in memories)
@@ -502,6 +511,7 @@ Nothing was handed to you. You are making civilization from nothing.
 YOUR MEMORIES:
 {memory_block}
 {inception_block}
+{transient_block}
 {tendency_block}
 
 {env_block}RIGHT NOW:

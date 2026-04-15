@@ -746,6 +746,8 @@ class CharacterTransientState(Base):
     hunger_level = Column(Float, default=4.0)            # mirrors biology.hunger
     fatigue_level = Column(Float, default=3.0)           # mirrors biology.fatigue
     shame_active = Column(Boolean, default=False)
+    hope_active = Column(Boolean, default=False)
+    obsession_text = Column(Text, nullable=True)         # one-line fixation, if any
     guardedness = Column(Float, default=0.3)             # 0-1
     loneliness = Column(Float, default=0.3)              # 0-1
     created_at = Column(DateTime, default=datetime.utcnow)
