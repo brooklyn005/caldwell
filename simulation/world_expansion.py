@@ -17,23 +17,157 @@ import re
 from sqlalchemy.orm import Session
 from database.models import (
     Character, Location, Memory, Dialogue,
-    EmergentLocation, LocationClaim
+    EmergentLocation, LocationClaim, DiscoveryCandidate, SilentAction,
 )
 
 logger = logging.getLogger("caldwell.world")
 
-# Keywords suggesting discovery of a new space
-DISCOVERY_PATTERNS = [
-    r"find[s]? (?:a |an )?(?:new |hidden |abandoned |small |separate |empty )?(?:room|space|place|area|spot|building|structure|clearing|path|trail|door|passage|cave|shelter|field|garden|courtyard|basement|rooftop|tower|ruin)",
-    r"discover[s]? (?:a |an )?(?:new |hidden |abandoned |small )?(?:room|space|place|area|spot|building)",
-    r"stumbl(?:e|es|ed) (?:upon|across|into) (?:a |an )?(?:room|space|place|area|building|structure)",
-    r"(?:explore[s]?|venture[s]?|walk[s]?) (?:beyond|past|outside|further than|away from)",
-    r"(?:has never|had never|first time) (?:been|seen|noticed) (?:this|here)",
-    r"(?:outside|beyond) (?:the|caldwell|the city|the walls|the edge)",
-    r"(?:no one|nobody) (?:has|had) (?:been|come) here",
-    r"(?:new|unexplored|unknown) territory",
-    r"outside (?:the|caldwell)",
+# ── Discovery signal detection ────────────────────────────────────────────────
+
+# Physical location keywords that suggest a real place was found
+_LOCATION_KEYWORDS = [
+    "forest", "trail", "clearing", "ruin", "ruins", "shelter", "creek",
+    "ridge", "hollow", "grove", "old building", "abandoned building",
+    "abandoned", "hidden", "passage", "cave", "field", "garden",
+    "courtyard", "basement", "rooftop", "tower", "path", "meadow",
+    "stream", "pond", "structure", "warehouse", "shed", "room",
 ]
+
+# Phrases that signal literal exploration
+_EXPLORATION_PHRASES = [
+    r"edge of\b", r"past the\b", r"beyond the\b", r"found a\b", r"found an\b",
+    r"discover(?:ed|s)?\b", r"stumbled upon\b", r"stumbled across\b",
+    r"stumbled into\b", r"explore[ds]?\b", r"ventured?\b",
+    r"never been here\b", r"first time (?:here|in this)\b",
+    r"no one has been\b", r"nobody has been\b",
+    r"outside (?:the city|caldwell|the edge|the walls)\b",
+    r"outside caldwell\b", r"beyond caldwell\b",
+]
+
+# Metaphorical phrases that must NOT trigger discovery
+_METAPHOR_BLOCKLIST = [
+    r"beyond my reach\b", r"beyond our reach\b",
+    r"beyond words\b", r"beyond understanding\b",
+    r"lost in thought\b", r"lost in my thoughts\b",
+    r"lost in memories\b", r"lost myself\b",
+    r"trail of thought\b", r"train of thought\b",
+    r"hollow feeling\b", r"hollow inside\b", r"feels hollow\b",
+    r"cleared my mind\b", r"clearing my head\b",
+    r"abandoned hope\b", r"abandoned the idea\b",
+    r"hidden feelings\b", r"hidden truth\b", r"hidden meaning\b",
+    r"sheltered from\b", r"shelter of\b",
+    r"path forward\b", r"path in life\b",
+    r"found myself\b", r"found my way\b", r"found peace\b",
+    r"found comfort\b", r"found meaning\b", r"found purpose\b",
+]
+
+# Outside indicators — if present alongside a keyword, territory_type = outside/frontier
+_OUTSIDE_INDICATORS = [
+    "outside", "beyond caldwell", "past the edge", "left caldwell",
+    "away from caldwell", "edge of the city", "outside the walls",
+    "far from", "further than", "past the boundary",
+]
+
+
+def _is_metaphorical(text: str) -> bool:
+    """Return True if the text matches a known metaphorical pattern."""
+    for pattern in _METAPHOR_BLOCKLIST:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _extract_location_hints(text: str) -> list[str]:
+    """
+    Return keyword hints found in text that plausibly describe a physical place.
+    Returns empty list if no exploration phrase is present or text is metaphorical.
+    """
+    lower = text.lower()
+    if _is_metaphorical(lower):
+        return []
+
+    # Require at least one exploration phrase
+    has_exploration = any(
+        re.search(p, lower) for p in _EXPLORATION_PHRASES
+    )
+    if not has_exploration:
+        return []
+
+    # Collect matched location keywords
+    hints = []
+    for kw in _LOCATION_KEYWORDS:
+        if kw in lower:
+            hints.append(kw)
+    return hints
+
+
+def _territory_for_text(text: str) -> str:
+    lower = text.lower()
+    for indicator in _OUTSIDE_INDICATORS:
+        if indicator in lower:
+            return "outside"
+    return "inside"
+
+
+# ── Discovery candidate management ────────────────────────────────────────────
+
+def _upsert_candidate(
+    name_hint: str,
+    source_id: int,
+    source_type: str,
+    territory_type: str,
+    sim_day: int,
+    db: Session,
+) -> DiscoveryCandidate:
+    """
+    Find or create a DiscoveryCandidate for name_hint.
+    Update confidence based on how many distinct source_types have contributed.
+    Returns the updated candidate.
+    """
+    candidate = (
+        db.query(DiscoveryCandidate)
+        .filter(
+            DiscoveryCandidate.name_hint == name_hint,
+            DiscoveryCandidate.promoted_to_location_id.is_(None),
+        )
+        .first()
+    )
+
+    if not candidate:
+        candidate = DiscoveryCandidate(
+            name_hint=name_hint,
+            confidence=0.3,
+            source_ids_json=json.dumps([source_id]),
+            source_types_json=json.dumps([source_type]),
+            territory_type=territory_type,
+            sim_day=sim_day,
+        )
+        db.add(candidate)
+        db.flush()
+        return candidate
+
+    # Merge in new source
+    source_ids = json.loads(candidate.source_ids_json or "[]")
+    source_types = json.loads(candidate.source_types_json or "[]")
+
+    if source_id not in source_ids:
+        source_ids.append(source_id)
+        candidate.source_ids_json = json.dumps(source_ids)
+
+    if source_type not in source_types:
+        source_types.append(source_type)
+        candidate.source_types_json = json.dumps(source_types)
+
+    # Confidence tiers based on number of distinct source types
+    n_sources = len(set(source_types))
+    if n_sources >= 3:
+        candidate.confidence = 0.9
+    elif n_sources >= 2:
+        candidate.confidence = 0.6
+    # else stays at 0.3
+
+    return candidate
+
 
 # Keywords suggesting claiming or naming a space
 CLAIM_PATTERNS = [
@@ -300,62 +434,137 @@ def _loc_to_world_map_payload(loc: Location, discoverer_roster_id: str, sim_day:
 
 def scan_for_discoveries(sim_day: int, db: Session) -> list[dict]:
     """
-    Scan today's action memories and dialogues for discovery language.
-    Creates new locations when strong discovery signals are found.
-    """
-    discoveries = []
+    Scan multiple signal sources for discovery language and accumulate confidence
+    in DiscoveryCandidate rows. Promotes candidates to Location rows when ready.
 
-    # Scan action memories from today
-    memories = (
+    Sources scanned:
+      - action memories (memory_type="action")
+      - monologue / feeling memories (memory_type="feeling")
+      - scene dialogue content (Dialogue.dialogue_json)
+      - silent action descriptions (SilentAction.description)
+    """
+    # ── Collect raw signals ──────────────────────────────────────────────────
+    signals: list[tuple[str, int, str]] = []  # (text, record_id, source_type)
+
+    # Action memories
+    for mem in (
         db.query(Memory)
+        .filter(Memory.sim_day == sim_day, Memory.memory_type == "action")
+        .all()
+    ):
+        signals.append((mem.content, mem.id, "action_memory"))
+
+    # Monologue / feeling memories
+    for mem in (
+        db.query(Memory)
+        .filter(Memory.sim_day == sim_day, Memory.memory_type == "feeling")
+        .all()
+    ):
+        signals.append((mem.content, mem.id, "monologue"))
+
+    # Scene dialogue — flatten all exchange texts
+    for dlg in db.query(Dialogue).filter(Dialogue.sim_day == sim_day).all():
+        try:
+            exchanges = json.loads(dlg.dialogue_json or "[]")
+            combined = " ".join(ex.get("text", "") for ex in exchanges if ex.get("text"))
+            if combined:
+                signals.append((combined, dlg.id, "dialogue"))
+        except Exception:
+            pass
+
+    # Silent action descriptions
+    for sa in db.query(SilentAction).filter(SilentAction.sim_day == sim_day).all():
+        if sa.description:
+            signals.append((sa.description, sa.id, "silent_action"))
+
+    # ── Process signals into candidates ──────────────────────────────────────
+    for text, record_id, source_type in signals:
+        hints = _extract_location_hints(text)
+        if not hints:
+            continue
+        territory = _territory_for_text(text)
+        for hint in hints:
+            _upsert_candidate(hint, record_id, source_type, territory, sim_day, db)
+
+    try:
+        db.flush()
+    except Exception:
+        db.rollback()
+        return []
+
+    # ── Promote candidates to Location rows ──────────────────────────────────
+    discoveries = []
+    candidates = (
+        db.query(DiscoveryCandidate)
         .filter(
-            Memory.sim_day == sim_day,
-            Memory.memory_type == "action",
+            DiscoveryCandidate.confidence >= 0.6,
+            DiscoveryCandidate.promoted_to_location_id.is_(None),
         )
         .all()
     )
 
-    for mem in memories:
-        text = mem.content.lower()
-        score = 0
-        for pattern in DISCOVERY_PATTERNS:
-            if re.search(pattern, text):
-                score += 1
+    for candidate in candidates:
+        is_outside = candidate.territory_type == "outside"
+        stage = "confirmed" if candidate.confidence >= 0.9 else "tentative"
 
-        if score < 2:
-            continue
-
-        # Strong discovery signal
-        char = db.query(Character).filter(
-            Character.id == mem.character_id
-        ).first()
-        if not char:
-            continue
-
-        # Determine if outside
-        is_outside = any(
-            kw in text for kw in [
-                "outside", "beyond", "wall", "edge", "far from",
-                "away from caldwell", "left caldwell", "past the"
-            ]
-        )
-
-        # Don't create if character is already at an emergent location
-        existing_emergent = (
-            db.query(EmergentLocation)
-            .filter(EmergentLocation.location_id == char.current_location_id)
-            .first()
-        )
-        if existing_emergent:
+        # Use first character from any source action memory as the discoverer
+        discoverer = _find_discoverer(candidate, db)
+        if not discoverer:
             continue
 
         new_loc = create_emergent_location(
-            char, mem.content, is_outside, sim_day, db
+            discoverer,
+            f"A {candidate.name_hint} discovered by {discoverer.given_name or discoverer.roster_id}",
+            is_outside,
+            sim_day,
+            db,
         )
-        if new_loc:
-            discoveries.append(_loc_to_world_map_payload(new_loc, char.roster_id, sim_day))
+        if not new_loc:
+            continue
+
+        # Override discovery_stage with candidate's confidence level
+        new_loc.discovery_stage = stage
+        candidate.promoted_to_location_id = new_loc.id
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            continue
+
+        discoveries.append(_loc_to_world_map_payload(new_loc, discoverer.roster_id, sim_day))
+        logger.info(
+            f"Day {sim_day}: DiscoveryCandidate '{candidate.name_hint}' "
+            f"promoted to Location (confidence={candidate.confidence}, stage={stage})"
+        )
 
     return discoveries
+
+
+def _find_discoverer(candidate: DiscoveryCandidate, db: Session) -> "Character | None":
+    """Find a character to attribute as the discoverer for a candidate."""
+    source_ids = json.loads(candidate.source_ids_json or "[]")
+    source_types = json.loads(candidate.source_types_json or "[]")
+
+    # Prefer an action memory source
+    for sid, stype in zip(source_ids, source_types):
+        if stype == "action_memory":
+            mem = db.query(Memory).filter(Memory.id == sid).first()
+            if mem:
+                char = db.query(Character).filter(Character.id == mem.character_id).first()
+                if char:
+                    return char
+
+    # Fall back to any memory source
+    for sid, stype in zip(source_ids, source_types):
+        if stype in ("action_memory", "monologue"):
+            mem = db.query(Memory).filter(Memory.id == sid).first()
+            if mem:
+                char = db.query(Character).filter(Character.id == mem.character_id).first()
+                if char:
+                    return char
+
+    # Last resort: first alive character
+    return db.query(Character).filter(Character.alive == True).first()
 
 
 def update_location_claims(sim_day: int, db: Session):

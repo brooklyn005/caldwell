@@ -423,6 +423,24 @@ class BehavioralTendency(Base):
         return json.loads(self.approaches_json or "{}")
 
 
+class DiscoveryCandidate(Base):
+    """
+    Accumulates signals pointing toward a new location before it is confirmed.
+    Promoted to a Location row once confidence >= 0.6.
+    """
+    __tablename__ = "discovery_candidates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name_hint = Column(String(128), nullable=False)       # keyword extracted (e.g. "clearing")
+    confidence = Column(Float, default=0.3)               # 0.3 / 0.6 / 0.9
+    source_ids_json = Column(Text, default="[]")          # JSON list of source record IDs
+    source_types_json = Column(Text, default="[]")        # JSON list of source_type strings
+    territory_type = Column(String(32), default="inside") # inside / frontier / outside
+    sim_day = Column(Integer, nullable=False)
+    promoted_to_location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class EmergentLocation(Base):
     __tablename__ = "emergent_locations"
     id = Column(Integer, primary_key=True, autoincrement=True)

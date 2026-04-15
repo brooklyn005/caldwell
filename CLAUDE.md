@@ -194,6 +194,7 @@ tick_interval_minutes = 20
 - **game.html — location_discovered websocket:** `handleWS` handles `location_discovered` events — adds the incoming location to `locationNodes`, calls `scene.renderLocationNode()`, logs to console with name/coordinates/territory_type, and adds a live feed entry. `renderLocationNode()` draws emergent locations with a deep teal fill, bright green border, diamond marker, and green label text — visually distinct from seed zones. Fades in over 800ms. New node is immediately available for `moveCharacter()` calls.
 - **world_expansion.py — assign_map_coordinates:** `assign_map_coordinates(db, territory_type) -> (float, float)` queries all Location rows with coordinates, enforces 80px minimum distance (pixel space: W=900, H=650), zones: `inside` [0.15–0.85 × 0.15–0.85], `frontier` (ring 0.05–0.95 excluding inside), `outside` (ring 0.02–0.98 excluding frontier). 50 random attempts via rejection-sampling `_sample_in_zone()`, falls back to expanding spiral from zone centre (49 rings). `create_emergent_location` updated to call this instead of the old hardcoded position list; sets all 15 emergent fields on the Location row directly. Verified: 20 simulated locations, 0 collisions, all in correct zones.
 - **world_expansion.py — location_discovered broadcast:** `_loc_to_world_map_payload(loc, discoverer_roster_id, sim_day)` builds the full `/api/world_map`-shaped dict from a newly committed Location row. `scan_for_discoveries` now returns this payload per discovery. `engine.py` already iterates discoveries and calls `await broadcast_fn({"type": "location_discovered", "data": disc})` — payload now carries all 15 world_map fields. `websocket_manager.py` confirmed: `async broadcast` and module-level `manager` singleton already present, no changes needed.
+- **world_expansion.py — multi-source discovery detection:** `DiscoveryCandidate` table added to `database/models.py` (`name_hint`, `confidence`, `source_ids_json`, `source_types_json`, `territory_type`, `sim_day`, `promoted_to_location_id`). Signal extraction via `_extract_location_hints()` (requires exploration phrase + no metaphor match) against `_LOCATION_KEYWORDS` list (30 terms). `_METAPHOR_BLOCKLIST` blocks "beyond my reach", "lost in thought", "found myself", "clearing my head", etc. `_upsert_candidate()` accumulates confidence by distinct source type count: 1→0.3, 2→0.6, 3+→0.9. `scan_for_discoveries()` now scans 4 sources: action memories, feeling/monologue memories, scene dialogue exchanges, silent action descriptions. Candidates at confidence ≥ 0.6 promoted to tentative Location; ≥ 0.9 to confirmed. Verified: single action memory → candidate at 0.3; second silent_action signal → confidence 0.6, tentative Location created.
 - **daily_composer.py**, **consequence_engine.py**, **silent_actions.py**, **transient_state.py**, **social_roles.py**, **location_memory.py**, **daybook.py**, **scene_categorizer.py**, **scene_selector.py**, **pressure_selector.py** — all implemented.
 
 ---
@@ -204,30 +205,7 @@ Execute these one at a time in order. Do not begin the next priority until the c
 
 ---
 
-### PRIORITY 1 — Expand discovery detection to multiple signal sources
-
-**Files to change:** `simulation/world_expansion.py`
-
-Audit the current detection logic and document which signal sources it currently scans. Then add scanning of: action memories, scene dialogue content, silent action descriptions, and monologue content if stored.
-
-Add a keyword/phrase list covering at minimum: "forest", "trail", "clearing", "ruin", "shelter", "creek", "ridge", "hollow", "grove", "edge of", "past the", "beyond the", "found a", "discovered", "stumbled upon", "hidden", "old building", "abandoned".
-
-For each candidate signal, produce a `(location_hint, confidence, source_type)` tuple rather than immediately creating a location. Apply these confidence rules:
-- Single mention = 0.3 (hint)
-- Two mentions from different sources = 0.6 (tentative)
-- Three or more mentions = 0.9 (confirmed)
-
-Do not create a `Location` row until confidence >= 0.6. At confidence >= 0.9, set `discovery_stage = "confirmed"`.
-
-Store hints and tentative discoveries in a new `DiscoveryCandidate` table with fields: `id`, `name_hint`, `confidence`, `source_ids_json`, `territory_type`, `created_at`, `sim_day`, `promoted_to_location_id`. Add this table to `database/models.py` and `reset_and_seed.py`.
-
-Phrases like "beyond my reach" or "lost in thought" must not trigger discovery — distinguish literal exploration language from metaphorical.
-
-**Done when:** A manually inserted action memory containing "found a clearing past the warehouse" produces a `DiscoveryCandidate` row with confidence 0.3. A second inserted memory referencing the same clearing raises confidence to 0.6 and creates a tentative `Location` row.
-
----
-
-### PRIORITY 2 — Tie discovery to discoverer character state
+### PRIORITY 1 — Tie discovery to discoverer character state
 
 **Files to change:** `simulation/world_expansion.py`, `simulation/memory_writer.py`, `simulation/social_roles.py`, `database/models.py`
 
@@ -243,7 +221,7 @@ Log each discovery event with character name, location name, and sim_day.
 
 ---
 
-### PRIORITY 3 — Increment use_count on Location when used in a scene
+### PRIORITY 2 — Increment use_count on Location when used in a scene
 
 **Files to change:** `simulation/conversation_runner.py` or `simulation/engine.py`
 
@@ -253,7 +231,7 @@ After each scene completes, look up the scene's location by name in the `Locatio
 
 ---
 
-### PRIORITY 4 — Expose discovery history and evolution indicators on the dashboard
+### PRIORITY 3 — Expose discovery history and evolution indicators on the dashboard
 
 **Files to change:** `static/dashboard.html`, `api/routes.py`
 
